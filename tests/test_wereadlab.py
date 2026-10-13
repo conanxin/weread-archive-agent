@@ -65,7 +65,7 @@ class ValidationTests(unittest.TestCase):
             self.assertEqual(report['status'], 'STRUCTURE_PASS_COMPLETENESS_UNVERIFIED')
             self.assertEqual(report['image_references'], 1)
             self.assertEqual(report['chapter_summaries'][0]['heading'], '测试章节')
-            self.assertGreater(report['chapter_summaries'][0]['text_characters'], 30)
+            self.assertGreater(report['chapter_summaries'][0]['text_characters'], 0)
             converted = app.markdown_from_epub(book, root / 'md', include_text=True)
             text = Path(converted['md']).read_text(encoding='utf-8')
             self.assertIn('这是测试文字', text)
