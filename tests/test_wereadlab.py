@@ -64,6 +64,8 @@ class ValidationTests(unittest.TestCase):
             report = app.inspect_epub(book, expected=1)
             self.assertEqual(report['status'], 'STRUCTURE_PASS_COMPLETENESS_UNVERIFIED')
             self.assertEqual(report['image_references'], 1)
+            self.assertEqual(report['chapter_summaries'][0]['heading'], '测试章节')
+            self.assertGreater(report['chapter_summaries'][0]['text_characters'], 30)
             converted = app.markdown_from_epub(book, root / 'md', include_text=True)
             text = Path(converted['md']).read_text(encoding='utf-8')
             self.assertIn('这是测试文字', text)
@@ -71,6 +73,45 @@ class ValidationTests(unittest.TestCase):
             self.assertEqual(converted['images'], 1)
             self.assertTrue((root / 'md/images/0001.jpg').exists())
             self.assertTrue(Path(converted['txt']).exists())
+
+    def test_inspect_cli_is_offline_and_machine_readable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            book = Path(tmp) / 'demo.epub'
+            make_book(book)
+            stream = io.StringIO()
+            with redirect_stdout(stream):
+                code = app.main(['inspect', str(book), '--json'])
+            self.assertEqual(code, 0)
+            result = json.loads(stream.getvalue())
+            self.assertEqual(result['status'], 'STRUCTURE_PASS_COMPLETENESS_UNVERIFIED')
+            self.assertEqual(result['validation']['spine_chapters'], 1)
+            self.assertEqual(result['validation']['chapter_summaries'][0]['heading'], '测试章节')
+
+    def test_offset_sample_uses_distinct_file_and_skip_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cookie = home / 'cookies.txt'
+            cookie.write_text('dummy, not real credentials', encoding='utf-8')
+            commands = []
+            def fake_run(argv, **kwargs):
+                commands.append(argv)
+                output = Path(argv[argv.index('--output') + 1])
+                make_book(output)
+                return app.subprocess.CompletedProcess(argv, 0, 'ok', '')
+            with mock.patch.object(app, 'COOKIE', cookie), \
+                 mock.patch.object(app, 'LIBRARY', home / 'library'), \
+                 mock.patch.object(app, 'ensure_upstream', return_value=home / 'fetch.py'), \
+                 mock.patch.object(app, 'git_commit', return_value='test-sha'), \
+                 mock.patch.object(app, 'run', side_effect=fake_run):
+                args = app.argparse.Namespace(url='https://weread.qq.com/web/reader/fixture',
+                    output_dir=None, sample=1, full=False, skip=4,
+                    format=['epub'], force=False, sleep=0.4, expected_chapters=None)
+                result = app.export_book(args)
+                self.assertEqual(result['status'], 'FILES_READY_COMPLETENESS_UNVERIFIED')
+                self.assertEqual(result['skipped_chapters'], 4)
+                self.assertTrue((home/'library'/'fixture'/'sample-1-skip-4.epub').is_file())
+                self.assertIn('--skip', commands[0])
+                self.assertEqual(commands[0][commands[0].index('--skip') + 1], '4')
 
     def test_missing_image_and_count_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
