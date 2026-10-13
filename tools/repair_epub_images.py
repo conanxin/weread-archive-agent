@@ -28,15 +28,21 @@ PACKAGE_NS = "http://www.idpf.org/2007/opf"
 IMAGE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/135.0 Safari/537.36"
 
 
-def _safe_image_url(url: str) -> bool:
+def _safe_image_url(url: str, *, redirected: bool = False) -> bool:
     p = urllib.parse.urlsplit(url)
-    return (p.scheme == "https" and p.hostname in ALLOWED_IMAGE_HOSTS
+    hostname = p.hostname or ""
+    # Image URLs originate on WeRead; the actual image CDN can issue an HTTP
+    # redirect to a Tencent Cloud host. Never accept arbitrary user-provided
+    # third-party URLs as initial image sources.
+    trusted_origin = hostname in ALLOWED_IMAGE_HOSTS
+    trusted_redirect = redirected and hostname.endswith(".gfp.tencent-cloud.com")
+    return (p.scheme == "https" and (trusted_origin or trusted_redirect)
             and p.port is None and p.username is None and p.password is None)
 
 
 class _RestrictedRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if not _safe_image_url(newurl):
+        if not _safe_image_url(newurl, redirected=True):
             raise ValueError("Image redirect outside trusted CDN")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
@@ -72,7 +78,7 @@ def make_downloader(cookie_file: Path | None):
             "Accept": "image/avif,image/webp,image/png,image/jpeg,image/gif,*/*;q=0.8",
         })
         with opener.open(request, timeout=25) as response:
-            if not _safe_image_url(response.geturl()):
+            if not _safe_image_url(response.geturl(), redirected=True):
                 raise ValueError("Image host changed")
             data = response.read(MAX_IMAGE_BYTES + 1)
         if len(data) > MAX_IMAGE_BYTES:
@@ -156,10 +162,10 @@ def repair_epub_images(
                     note_markers += 1
                     alt_attr = IMAGE_ALT.search(tag)
                     alt = html.unescape(alt_attr.group(2).strip()) if alt_attr else ""
-                    label = alt if alt and alt.lower() not in {"image", "note", "icon"} else "〔注〕"
-                    # The source note icon is missing. Preserve a visible marker,
-                    # not a silently invented replacement image.
-                    return '<span class="weread-note-marker">' + html.escape(label[:60]) + '</span>'
+                    label = ("〔注：" + alt + "〕") if alt and alt.lower() not in {"image", "note", "icon"} else "〔注〕"
+                    # Some annotations contain paragraphs in the alt attribute.
+                    # Preserve the complete annotation text, never truncate it.
+                    return '<span class="weread-note-marker">' + html.escape(label) + '</span>'
                 parts = urllib.parse.urlsplit(raw_src)
                 if parts.scheme not in {"http", "https"}:
                     return tag
