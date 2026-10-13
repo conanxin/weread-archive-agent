@@ -29,3 +29,13 @@
 - Root cause hypothesis: upstream resource rewriting covers TAR-sourced chapter assets but not these external CDN images and the shared missing note icon.
 - P1 repair feature: fix already downloaded `*.partial.epub` rather than requesting full text again. Download allowlisted CDN images, dedupe, update OPF; preserve missing note icon semantics via visible text marker; do not claim image or catalog completeness if unresolved. See GitHub issue #7.
 - Verify on the user's computer after synthetic CI passes. **Do not commit book URL, chapter text, credentials or image files.**
+
+
+## 2026-10-13 — P1 real image repair verified on Windows
+
+- A real authenticated two-body-chapter EPUB was preserved as `*.partial.epub` and repaired **without re-fetching chapter text**. The original 21,945 characters of chapter-body extraction remain the provenance baseline; later EPUB validators count additional visible annotation text.
+- The original sample had 117 missing references to `Images/note.png` (all carrying `alt` annotations of 19–238 characters) and 33 different `https://res.weread.qq.com/` remote image URLs. Initial strict host policy rejected all images because WeRead redirects to Tencent's `*.gfp.tencent-cloud.com` CDN; a one-image local HTTP test verified HTTPS 200, JPEG content. Fix was to allow only that trusted redirect family and preserve full `alt` note text.
+- Real repaired EPUB: `IMAGES_REPAIRED` / `STRUCTURE_PASS_COMPLETENESS_UNVERIFIED`, **33/33** remote images embedded, **117** annotated note markers converted, **36** EPUB manifest image assets, zero missing/remote references. Markdown exists (33 local image assets), and Calibre generated a PDF.
+- PDF inspection: **47 pages**, **33 uniquely embedded images**, images on 26 pages, text extractable on all 47 pages (30,012 extracted characters). This establishes a working two-chapter EPUB → Markdown/PDF pipeline, **not** a complete, visually audited book.
+- Implemented in [PR #8](https://github.com/conanxin/weread-archive-agent/pull/8) and [PR #9](https://github.com/conanxin/weread-archive-agent/pull/9); offline test suite **13/13 PASS** on the Windows machine. See image repair [Issue #7](https://github.com/conanxin/weread-archive-agent/issues/7).
+- Pending: visual rendering QA for footnotes, figure captions and figure/paragraph ordering; compare catalog vs full-book chapter coverage. Long-book checkpoint/resume is still not implemented.
