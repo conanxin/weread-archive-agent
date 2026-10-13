@@ -115,6 +115,17 @@ def _error_reason(exc: Exception) -> str:
     # Do not leak image URLs, cookies or HTTP response bodies into reports.
     if isinstance(exc, urllib.error.HTTPError):
         return f"HTTP_{exc.code}"
+    if isinstance(exc, ValueError):
+        message = str(exc)
+        if "redirect outside trusted CDN" in message or "host changed" in message:
+            return "REDIRECT_HOST_NOT_ALLOWLISTED"
+        if "not a supported image" in message:
+            return "NOT_AN_IMAGE_RESPONSE"
+        if "exceeds" in message:
+            return "IMAGE_EXCEEDS_SIZE_LIMIT"
+        return "IMAGE_VALUE_ERROR"
+    if isinstance(exc, urllib.error.URLError):
+        return "NETWORK_REQUEST_ERROR"
     return type(exc).__name__
 
 
