@@ -10,7 +10,7 @@ import zipfile
 
 import wereadlab as app
 from tools.check_upstreams import changed_heads
-from tools.repair_epub_images import repair_epub_images
+from tools.repair_epub_images import repair_epub_images, _safe_image_url
 
 
 def make_book(target: Path, *, broken=False, words='第一章 这是测试文字、用于构造一份完全合成的电子书。', extra_images=''):
@@ -163,6 +163,26 @@ class ValidationTests(unittest.TestCase):
                 self.assertEqual(chapter.count('〔注〕'), 3)
                 self.assertNotIn('res.weread.qq.com', chapter)
             self.assertEqual(source.exists(), True)
+
+    def test_cdn_redirect_allowlist_and_annotation_not_truncated(self):
+        redirected = 'https://wrco-40036.sh.gfp.tencent-cloud.com/path/photo.jpg'
+        self.assertFalse(_safe_image_url(redirected))
+        self.assertTrue(_safe_image_url(redirected, redirected=True))
+        self.assertFalse(_safe_image_url('https://gfp.tencent-cloud.com.evil.example/test',
+                                         redirected=True))
+        self.assertTrue(_safe_image_url('https://res.weread.qq.com/wrepub/x.jpg'))
+        with tempfile.TemporaryDirectory() as tmp:
+            source, dest = Path(tmp)/'source.epub', Path(tmp)/'repaired.epub'
+            detailed_annotation = '对古代运河研究的长注释文字' * 35
+            make_book(source, extra_images='<img src="Images/note.png" alt="' +
+                      detailed_annotation + '"/>')
+            report = repair_epub_images(source, dest, downloader=lambda _: self.fail('unexpected network'))
+            self.assertEqual(report['note_markers_substituted'], 1)
+            self.assertEqual(app.inspect_epub(dest)['status'], 'STRUCTURE_PASS_COMPLETENESS_UNVERIFIED')
+            with zipfile.ZipFile(dest) as z:
+                chapter = z.read('OEBPS/c1.xhtml').decode('utf-8')
+            self.assertIn(detailed_annotation, chapter)
+            self.assertIn('〔注：', chapter)
 
     def test_repair_failure_preserves_unresolved_images(self):
         with tempfile.TemporaryDirectory() as tmp:
