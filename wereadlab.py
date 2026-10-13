@@ -47,7 +47,11 @@ def emit(data: dict, *, as_json: bool = False) -> None:
 
 
 def reader_id(url: str) -> str:
-    parts = urllib.parse.urlsplit(url.strip())
+    value = url.strip()
+    # Copyable documentation placeholders are not a real reader page.
+    if value == "微信读书实际阅读器URL" or "这里替换成真实ID" in value or "实际阅读器ID" in value:
+        raise ValueError("当前输入是文档示例占位符，不是真实书籍链接。请在微信读书网页版打开一本书的阅读页面，从浏览器地址栏复制完整 https://weread.qq.com/web/reader/... 链接")
+    parts = urllib.parse.urlsplit(value)
     if parts.scheme != "https" or parts.hostname != "weread.qq.com" or parts.port is not None:
         raise ValueError("需要 https://weread.qq.com/web/reader/... 的真实阅读页面 URL")
     match = re.fullmatch(r"/web/reader/([A-Za-z0-9_-]+)", parts.path)
@@ -112,7 +116,7 @@ def doctor() -> dict:
                   playwright=playwright_installed, calibre=bool(calibre()),
                   cookie_file_exists=COOKIE.is_file(), upstream_installed=(UPSTREAM / "scripts" / "fetch_weread_epub.py").is_file(),
                   upstream_sha=git_commit(UPSTREAM), data_home=str(HOME),
-                  note="READY 表示本地依赖齐备，不表示账户权限或真实全文导出已经通过")
+                  note="Cookie 文件存在只证明会话曾保存，不代表当前仍已登录；READY 也不表示实际书籍全文导出已验证")
 
 
 def _cookie_from_browser(c: dict) -> http.cookiejar.Cookie:
@@ -165,7 +169,7 @@ async def _login() -> dict:
                 jar.set_cookie(_cookie_from_browser(c))
             jar.save(ignore_discard=True, ignore_expires=True)
             return result("SESSION_SAVED", cookie_path=str(COOKIE), saved_cookie_count=len(selected),
-                          note="会话只保存在本机，不会随项目提交")
+                          note="已保存本机 Cookie，但尚未验证目标书籍的实际阅读权限；Cookie 不会随项目提交")
         finally:
             await ctx.close()
 
@@ -457,7 +461,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             data = export_book(args)
         except ValueError as exc:
-            data = result("INVALID_URL", reason=str(exc))
+            data = result("INVALID_URL", reason=str(exc),
+                          action="先在 https://weread.qq.com/ 打开书架中的一本书，点击阅读并复制浏览器地址栏中的真实 /web/reader/... 链接；或双击 start.cmd 按提示输入。不要复制示例文字。")
     else:
         reports = sorted(LIBRARY.glob("*/*.report.json")) if LIBRARY.exists() else []
         data = result("STATUS", jobs=[json.loads(p.read_text(encoding="utf-8")) for p in reports[-30:]])
