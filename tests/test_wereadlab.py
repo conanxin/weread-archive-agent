@@ -130,7 +130,7 @@ class ValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             url = 'https://res.weread.qq.com/wrepub/fixture001.jpg'
-            extra = ('<img src="../Images/note.png"/>' * 3
+            extra = ('<img src="Images/note.png"/>' * 3
                      + f'<img src="{url}"/>' * 2)
             source = folder / 'partial.epub'
             dest = folder / 'repaired.epub'
