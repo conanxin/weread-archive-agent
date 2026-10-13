@@ -1,0 +1,10 @@
+.local/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.epub
+*.pdf
+*.cookies.txt
+*.log
+output/
