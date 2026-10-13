@@ -13,6 +13,8 @@ if not exist ".local\session\weread.cookies.txt" (
   %PYTHON% wereadlab.py login
 )
 echo.
+echo Open an actual book in https://weread.qq.com/ and click Read.
+echo Copy its full browser address (not the example text from README).
 set /p "URL=Paste real WeRead /web/reader/ URL: "
 if "%URL%"=="" exit /b 1
 set /p "FULL=Export full book? Y/N [N]: "
