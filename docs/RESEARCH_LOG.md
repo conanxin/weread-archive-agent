@@ -21,3 +21,11 @@
 - Login cookie jar compatibility across reader sessions; cookie renewal behavior.
 - Which book formats can be extracted via source API after October 2026 changes.
 - Image order, footnotes, tables, section boundaries, and authenticity of chapter coverage on a real book.
+
+## 2026-10-13 — Real-book sample and image repair hypothesis
+
+- First sample fetched front matter (2 sections, 250 characters); later 2-chapter offset sample fetched substantial actual body text: **21,945 characters** total (9,691 + 12,254), EPUB structure otherwise valid. **Not a verified full-book export.**
+- Image audit of the two body sections found **150 total references**: 117 occurrences of one missing `Images/note.png` marker plus 33 distinct `res.weread.qq.com/wrepub/` CDN resources. Only three other images were packaged by upstream TAR-based asset handler. The prior `STRUCTURE_INCOMPLETE` accurately prevented incomplete files being marked ready.
+- Root cause hypothesis: upstream resource rewriting covers TAR-sourced chapter assets but not these external CDN images and the shared missing note icon.
+- P1 repair feature: fix already downloaded `*.partial.epub` rather than requesting full text again. Download allowlisted CDN images, dedupe, update OPF; preserve missing note icon semantics via visible text marker; do not claim image or catalog completeness if unresolved. See GitHub issue #7.
+- Verify on the user's computer after synthetic CI passes. **Do not commit book URL, chapter text, credentials or image files.**

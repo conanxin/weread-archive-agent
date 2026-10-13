@@ -43,6 +43,15 @@ python wereadlab.py status --json
 - `export` 首次自动浅克隆上游仓库至 `.local/upstream/`。上游不在每次运行时自动更新，保持版本可复现。需要更新时执行 `python wereadlab.py upstream --update`。
 - 默认执行 **2 章试导出**，即目录中前两个被识别为可读的章节，可能只是扉页/版权页。可以传 `--sample 2 --skip 4` 抽查目录中第 5、6 个可读章节；两次抽查结果会分开保存，避免误用缓存。传 `--full` 才取当前账号实际可读的整书章节。
 - `inspect --latest --json` 在本地逐章列出标题、文字字符数和图片引用数，**不再联网抓书**。看到 `STRUCTURE_PASS_COMPLETENESS_UNVERIFIED` 只表示结构正常，不证明全文齐全或文字完全正确。
+- 若章节正文已取得但返回 `IMAGE_ASSETS_INCOMPLETE`（CDN 插图未下载、注释图标缺失），**不要先重新抓全书**。程序在新导出时会自动尝试图片修复；旧版留下的 `*.partial.epub` 可独立修复，不再发起章节正文请求：
+
+```powershell
+cd D:\CodexData\weread-archive-agent
+python wereadlab.py repair --latest --format epub --format md --format pdf --json
+python wereadlab.py inspect --latest --json
+```
+
+图片修复只请求白名单 `https://res.weread.qq.com/` 的图片，将可下载资源写入 EPUB 并更新清单；重复 URL 只下载一次。原书缺失的 `Images/note.png` 用明显的文字注释标记 `〔注〕` 替代，不声称还原原图。无法下载的图片仍会导致 `IMAGE_ASSETS_INCOMPLETE`，不被静默跳过。修复文件另存为 `*.repaired.epub`，原始 `*.partial.epub` 保留。
 - 默认若 EPUB 已存在会直接复用，避免重复请求。需要重试传 `--force`。
 - 可用 `--expected-chapters N` 指定经过人工核对的**应有章节数**；结构检查不满足时不进行下一步转换。
 - 用 `--output-dir D:\Books\SomeBook` 指定输出目录；否则使用 `.local/library/<reader-id>/`。

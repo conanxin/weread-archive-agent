@@ -24,6 +24,8 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 
+from tools.repair_epub_images import repair_epub_images
+
 VERSION = "0.1.0"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("WEREADLAB_HOME", str(ROOT / ".local"))).expanduser().resolve()
@@ -272,6 +274,12 @@ def inspect_epub(path: Path, expected: int | None = None) -> dict:
                         report["remote_images"].append(src)
                     elif local not in files:
                         report["broken_images"].append(local)
+            # Each missing shared note icon can occur dozens of times. Keep
+            # unique references in the JSON, while retaining occurrence counts.
+            report["broken_image_references"] = len(report["broken_images"])
+            report["remote_image_references"] = len(report["remote_images"])
+            report["broken_images"] = sorted(set(report["broken_images"]))
+            report["remote_images"] = sorted(set(report["remote_images"]))
             ok = (report["zip_crc_ok"] and report["mimetype_ok"] and bool(spine) and
                   not report["broken_spine"] and not report["broken_images"] and
                   not report["remote_images"] and (report["text_characters"] > 0 or report["image_references"] > 0) and
@@ -404,8 +412,21 @@ def export_book(args) -> dict:
                 return save_report(job_path, {**data, "status": classify_error(proc.stdout + proc.stderr),
                                               "action": "Inspect local report/log and fix the indicated cause"})
             validated = inspect_epub(staged, args.expected_chapters or (None if args.full else args.sample))
+            if validated["status"] != "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED" and (
+                validated.get("broken_images") or validated.get("remote_images")
+            ):
+                # Keep the raw partial EPUB. Repair only image references, not
+                # chapter content, and do not discard a failed partial result.
+                repaired = destination / f"{prefix}.images.partial.epub"
+                data["image_repair"] = repair_epub_images(
+                    staged, repaired, cookie_file=COOKIE
+                )
+                validated = inspect_epub(repaired, args.expected_chapters or (None if args.full else args.sample))
+                if validated["status"] == "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED":
+                    staged = repaired
             if validated["status"] != "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED":
-                return save_report(job_path, {**data, "status": "STRUCTURE_INCOMPLETE", "validation": validated})
+                status = "IMAGE_ASSETS_INCOMPLETE" if data.get("image_repair") else "STRUCTURE_INCOMPLETE"
+                return save_report(job_path, {**data, "status": status, "validation": validated})
             staged.replace(epub)
         elif job_path.is_file():
             try:
@@ -466,6 +487,14 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument("--output-dir")
     exp.add_argument("--force", action="store_true")
     exp.add_argument("--json", action="store_true")
+    repair = sub.add_parser("repair", help="修复已有 EPUB 的 CDN 图片及注释图标，不重新抓取正文")
+    repair.add_argument("file", nargs="?", help="已有 EPUB（可以是 .partial.epub）")
+    repair.add_argument("--latest", action="store_true", help="选择最近生成的本地部分 EPUB")
+    repair.add_argument("--output", help="指定修复后的新 EPUB 路径；不会覆盖原文件")
+    repair.add_argument("--max-images", type=int, default=500)
+    repair.add_argument("--format", action="append", choices=["epub", "pdf", "md", "txt"],
+                        help="修复成功后直接转换为指定格式")
+    repair.add_argument("--json", action="store_true")
     inspector = sub.add_parser("inspect", help="本地 EPUB 逐章结构与字数检查；不访问微信读书")
     inspector.add_argument("file", nargs="?", help="已有 EPUB 文件路径")
     inspector.add_argument("--latest", action="store_true", help="自动检查本机最近生成的 EPUB")
@@ -497,6 +526,52 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             data = result("INVALID_URL", reason=str(exc),
                           action="先在 https://weread.qq.com/ 打开书架中的一本书，点击阅读并复制浏览器地址栏中的真实 /web/reader/... 链接；或双击 start.cmd 按提示输入。不要复制示例文字。")
+    elif args.command == "repair":
+        if args.file and args.latest:
+            parser.error("repair 的文件路径和 --latest 只能选择一种")
+        if args.max_images < 1:
+            parser.error("--max-images 必须大于 0")
+        source = Path(args.file).expanduser() if args.file else None
+        if args.latest:
+            candidates = list(LIBRARY.glob("*/*.partial.epub")) if LIBRARY.exists() else []
+            source = max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+        if source is None:
+            data = result("NO_EPUB_FOUND", action="用 repair --latest 或 repair <EPUB文件路径> 提供待修复文件")
+        else:
+            output = Path(args.output).expanduser() if args.output else source.with_name(
+                source.name.replace(".partial.epub", ".repaired.epub").replace(".epub", ".repaired.epub")
+                if ".partial.epub" not in source.name else source.name.replace(".partial.epub", ".repaired.epub")
+            )
+            try:
+                details = repair_epub_images(source, output, cookie_file=COOKIE, max_images=args.max_images)
+                validation = inspect_epub(output)
+                ready = validation["status"] == "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED"
+                artifacts = {"epub": str(output)} if ready else {}
+                missing_formats = []
+                formats = set(args.format or ["epub"])
+                if ready and ("md" in formats or "txt" in formats):
+                    converted = markdown_from_epub(output, output.with_suffix(""),
+                                                   include_text="txt" in formats)
+                    artifacts.update({k: v for k, v in converted.items() if k in formats})
+                    if converted["unresolved_images"]:
+                        missing_formats.append("unresolved markdown image references")
+                if ready and "pdf" in formats:
+                    converter = calibre()
+                    if not converter:
+                        missing_formats.append("pdf: install Calibre")
+                    else:
+                        pdf_file = output.with_suffix(".pdf")
+                        proc = run([converter, str(output), str(pdf_file), "--paper-size", "a4"])
+                        if proc.returncode == 0 and pdf_file.is_file() and pdf_file.stat().st_size:
+                            artifacts["pdf"] = str(pdf_file)
+                        else:
+                            missing_formats.append("pdf: Calibre conversion failed")
+                status = ("FORMAT_PARTIAL" if missing_formats else "IMAGES_REPAIRED") if ready else "IMAGE_ASSETS_INCOMPLETE"
+                data = result(status, image_repair=details, validation=validation,
+                              artifacts=artifacts, missing_formats=missing_formats,
+                              note="不会重新抓取章节；EPUB 结构通过仍需核对原书目录和图像内容")
+            except (OSError, ValueError, RuntimeError, zipfile.BadZipFile, ET.ParseError) as exc:
+                data = result("IMAGE_REPAIR_ERROR", reason=str(exc)[:300])
     elif args.command == "inspect":
         if args.file and args.latest:
             parser.error("inspect 的文件路径和 --latest 只能选择一种")
@@ -517,7 +592,7 @@ def main(argv: list[str] | None = None) -> int:
         data = result("STATUS", jobs=[json.loads(p.read_text(encoding="utf-8")) for p in reports[-30:]])
     emit(data, as_json=args.json)
     good = {"READY", "UPSTREAM_READY", "SESSION_SAVED", "FILES_READY_COMPLETENESS_UNVERIFIED",
-            "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "STATUS"}
+            "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "IMAGES_REPAIRED", "STATUS"}
     return 0 if data["status"] in good else 2
 
 
