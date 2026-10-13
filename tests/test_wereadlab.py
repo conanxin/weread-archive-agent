@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import tempfile
@@ -9,10 +10,11 @@ import zipfile
 
 import wereadlab as app
 from tools.check_upstreams import changed_heads
+from tools.repair_epub_images import repair_epub_images
 
 
-def make_book(target: Path, *, broken=False, words='第一章 这是测试文字、用于构造一份完全合成的电子书。'):
-    doc = f'<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>测试章节</h1><p>{words}</p><img src="images/a.jpg"/></body></html>'
+def make_book(target: Path, *, broken=False, words='第一章 这是测试文字、用于构造一份完全合成的电子书。', extra_images=''):
+    doc = f'<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>测试章节</h1><p>{words}</p><img src="images/a.jpg"/>{extra_images}</body></html>'
     opf = '''<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>测试书</dc:title></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/><item id="pic" href="images/a.jpg" media-type="image/jpeg"/></manifest><spine><itemref idref="c1"/></spine></package>'''
     container = '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'
     with zipfile.ZipFile(target, 'w') as z:
@@ -123,6 +125,58 @@ class ValidationTests(unittest.TestCase):
             complete = Path(tmp) / 'complete.epub'
             make_book(complete)
             self.assertEqual(app.inspect_epub(complete, expected=2)['status'], 'STRUCTURE_INCOMPLETE')
+
+    def test_repair_missing_note_and_dedupe_remote_cdn_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            url = 'https://res.weread.qq.com/wrepub/fixture001.jpg'
+            extra = ('<img src="../Images/note.png"/>' * 3
+                     + f'<img src="{url}"/>' * 2)
+            source = folder / 'partial.epub'
+            dest = folder / 'repaired.epub'
+            make_book(source, extra_images=extra)
+            prior = app.inspect_epub(source)
+            self.assertEqual(prior['status'], 'STRUCTURE_INCOMPLETE')
+            self.assertEqual(prior['broken_image_references'], 3)
+            self.assertEqual(prior['broken_images'], ['OEBPS/Images/note.png'])
+            self.assertEqual(prior['remote_image_references'], 2)
+            self.assertEqual(prior['remote_images'], [url])
+            calls = []
+            png = base64.b64decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+8r70AAAAASUVORK5CYII=')
+            def fake_download(image_url):
+                calls.append(image_url)
+                return png, '.png', 'image/png'
+            report = repair_epub_images(source, dest, downloader=fake_download)
+            self.assertEqual(calls, [url])
+            self.assertEqual(report['note_markers_substituted'], 3)
+            self.assertEqual(report['downloaded_unique_images'], 1)
+            self.assertEqual(report['remote_image_references'], 2)
+            self.assertEqual(report['download_failure_count'], 0)
+            validation = app.inspect_epub(dest)
+            self.assertEqual(validation['status'], 'STRUCTURE_PASS_COMPLETENESS_UNVERIFIED')
+            self.assertEqual(validation['remote_images'], [])
+            self.assertEqual(validation['broken_images'], [])
+            with zipfile.ZipFile(dest) as z:
+                self.assertTrue(any(n.startswith('OEBPS/images/wr_') for n in z.namelist()))
+                chapter = z.read('OEBPS/c1.xhtml').decode('utf-8')
+                self.assertEqual(chapter.count('〔注〕'), 3)
+                self.assertNotIn('res.weread.qq.com', chapter)
+            self.assertEqual(source.exists(), True)
+
+    def test_repair_failure_preserves_unresolved_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            url = 'https://res.weread.qq.com/wrepub/unavailable.jpg'
+            source, dest = folder / 'source.epub', folder / 'output.epub'
+            make_book(source, extra_images=f'<img src="{url}"/>')
+            def fail(_url):
+                raise ValueError('fixture image unavailable')
+            report = repair_epub_images(source, dest, downloader=fail)
+            self.assertEqual(report['download_failure_count'], 1)
+            self.assertEqual(report['downloaded_unique_images'], 0)
+            self.assertEqual(app.inspect_epub(dest)['status'], 'STRUCTURE_INCOMPLETE')
+            self.assertTrue(source.is_file())
 
     def test_corrupt_epub_is_reported_not_crash(self):
         with tempfile.TemporaryDirectory() as tmp:
