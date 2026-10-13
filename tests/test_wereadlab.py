@@ -1,5 +1,7 @@
+import io
 import json
 import tempfile
+from contextlib import redirect_stdout
 from pathlib import Path
 import unittest
 from unittest import mock
@@ -39,6 +41,20 @@ class ValidationTests(unittest.TestCase):
                     'https://weread.qq.com/web/reader/../shelf']:
             with self.subTest(url=url), self.assertRaises(ValueError):
                 app.reader_id(url)
+
+    def test_placeholder_reader_link_reports_next_step(self):
+        for value in ("微信读书实际阅读器URL",
+                      "https://weread.qq.com/web/reader/这里替换成真实ID"):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "占位符"):
+                app.reader_id(value)
+
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            rc = app.main(["export", "微信读书实际阅读器URL", "--json"])
+        self.assertEqual(rc, 2)
+        response = json.loads(stream.getvalue())
+        self.assertEqual(response["status"], "INVALID_URL")
+        self.assertIn("start.cmd", response["action"])
 
     def test_valid_epub_and_markdown(self):
         with tempfile.TemporaryDirectory() as tmp:

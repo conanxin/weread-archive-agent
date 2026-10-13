@@ -16,15 +16,25 @@
 
 **方法 A：双击 `start.cmd`**，首次弹出浏览器扫码登录，随后粘贴微信读书网页版阅读地址。首次登录时会按需安装 Playwright / Chromium，安装过程需要网络连接和可交互的 Windows 桌面。
 
-**方法 B：命令行 / Agent**：
+**方法 B：命令行 / Agent**。下面使用交互提示，避免误把示例 URL 当作真实书籍地址：
+
+1. 在浏览器进入 [微信读书网页版](https://weread.qq.com/)，打开书架里一本可以阅读的书，**点击「阅读」后**复制地址栏中完整的 `https://weread.qq.com/web/reader/...` 链接。
+2. 在 PowerShell 执行以下命令，粘贴链接时只需输入一次（不要粘贴中文占位文字）。
 
 ```powershell
 python wereadlab.py doctor --json
-python wereadlab.py login
-python wereadlab.py export "https://weread.qq.com/web/reader/实际阅读器ID" --sample 2 --format epub --format md --json
-python wereadlab.py export "https://weread.qq.com/web/reader/实际阅读器ID" --full --format epub --format pdf --format md --format txt --json
+# 如果之前已完成扫码登录，下一行无需重复运行
+# python wereadlab.py login
+$readerUrl = Read-Host "请粘贴从微信读书阅读页复制的完整 URL"
+python wereadlab.py export $readerUrl --sample 2 --format epub --format md --json
+# 两章验证成功后，才运行全书导出：
+# python wereadlab.py export $readerUrl --full --format epub --format pdf --format md --format txt --json
 python wereadlab.py status --json
 ```
+
+也可以先复制浏览器地址栏，再直接执行 `python wereadlab.py export (Get-Clipboard) --sample 2 --format epub --format md --json`。**详情页 `/web/bookDetail/...` 与实际阅读页 `/web/reader/...` 不应混用。**
+
+`SESSION_SAVED` 表示 Cookie 已保存在本机，不代表已经确认能读取目标书籍；真实可用性要由后续试导出来验证。
 
 - `login` 首次安装 Python Playwright（需要联网）并打开本地浏览器供本人扫码；未装 Chromium 时依提示安装一次。**无人值守 Agent 不应尝试自动扫码。**
 - `export` 首次自动浅克隆上游仓库至 `.local/upstream/`。上游不在每次运行时自动更新，保持版本可复现。需要更新时执行 `python wereadlab.py upstream --update`。
