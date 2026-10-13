@@ -180,9 +180,15 @@ class BodyScanner(HTMLParser):
         self.text_chars = 0
         self.images: list[str] = []
         self.in_hidden = 0
+        self.headings: list[str] = []
+        self.heading_tag: str | None = None
+        self.heading_parts: list[str] = []
 
     def handle_starttag(self, tag, attrs):
         name = tag.lower()
+        if name in {"h1", "h2", "h3", "h4", "h5", "h6"} and self.heading_tag is None:
+            self.heading_tag = name
+            self.heading_parts = []
         if name in {"script", "style"}:
             self.in_hidden += 1
         if name in {"img", "image"}:
@@ -192,10 +198,19 @@ class BodyScanner(HTMLParser):
                 self.images.append(html.unescape(src))
 
     def handle_endtag(self, tag):
-        if tag.lower() in {"script", "style"} and self.in_hidden:
+        tag = tag.lower()
+        if tag == self.heading_tag:
+            heading = " ".join("".join(self.heading_parts).split())
+            if heading:
+                self.headings.append(heading[:160])
+            self.heading_tag = None
+            self.heading_parts = []
+        if tag in {"script", "style"} and self.in_hidden:
             self.in_hidden -= 1
 
     def handle_data(self, data):
+        if self.heading_tag is not None:
+            self.heading_parts.append(data)
         if not self.in_hidden:
             self.text_chars += len("".join(data.split()))
 
@@ -231,7 +246,7 @@ def inspect_epub(path: Path, expected: int | None = None) -> dict:
             report.update(title=title, spine_chapters=len(spine), text_characters=0,
                           manifest_images=sum(x.get("media-type", "").startswith("image/") for x in items.values()),
                           broken_spine=[], broken_images=[], remote_images=[], image_references=0,
-                          very_short_chapters=[])
+                          very_short_chapters=[], chapter_summaries=[])
             for index, item_id in enumerate(spine, 1):
                 item = items.get(item_id)
                 path_in_zip = posixpath.normpath(posixpath.join(opfdir, item.get("href", ""))) if item else ""
@@ -240,6 +255,13 @@ def inspect_epub(path: Path, expected: int | None = None) -> dict:
                     continue
                 scanner = BodyScanner()
                 scanner.feed(z.read(path_in_zip).decode("utf-8-sig", errors="replace"))
+                scanner.close()
+                report["chapter_summaries"].append({
+                    "index": index,
+                    "heading": scanner.headings[0] if scanner.headings else "",
+                    "text_characters": scanner.text_chars,
+                    "image_references": len(scanner.images),
+                })
                 report["text_characters"] += scanner.text_chars
                 if scanner.text_chars < 30:
                     report["very_short_chapters"].append(index)
@@ -351,14 +373,15 @@ def export_book(args) -> dict:
     book_key = reader_id(args.url)
     destination = (Path(args.output_dir).resolve() if args.output_dir else LIBRARY / book_key)
     destination.mkdir(parents=True, exist_ok=True)
-    prefix = "full" if args.full else f"sample-{args.sample}"
+    skipped = int(getattr(args, "skip", 0))
+    prefix = "full" if args.full else f"sample-{args.sample}" + (f"-skip-{skipped}" if skipped else "")
     epub = destination / f"{prefix}.epub"
     job_path = destination / f"{prefix}.report.json"
     formats = set(args.format or ["epub"])
     formats.add("epub")
     data = result("RUNNING", reader_url=args.url, reader_id=book_key,
                   created_at=datetime.now(timezone.utc).isoformat(),
-                  scope=prefix, formats_requested=sorted(formats), provider="finlater-epub",
+                  scope=prefix, skipped_chapters=skipped, formats_requested=sorted(formats), provider="finlater-epub",
                   upstream_repo=UPSTREAM_REPO)
     if not COOKIE.is_file() and not epub.is_file():
         return save_report(job_path, {**data, "status": "LOGIN_REQUIRED", "action": "python wereadlab.py login"})
@@ -372,6 +395,8 @@ def export_book(args) -> dict:
                        "--output", str(staged), "--sleep", str(args.sleep)]
             if not args.full:
                 command.extend(["--limit", str(args.sample)])
+                if skipped:
+                    command.extend(["--skip", str(skipped)])
             proc = run(command, cwd=UPSTREAM)
             # The upstream output is locally retained; never commit this file.
             (destination / f"{prefix}.log").write_text(proc.stdout + "\n" + proc.stderr, encoding="utf-8")
@@ -436,9 +461,16 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument("--format", action="append", choices=["epub", "pdf", "md", "txt"])
     exp.add_argument("--expected-chapters", type=int)
     exp.add_argument("--sleep", type=float, default=0.4)
+    exp.add_argument("--skip", type=int, default=0,
+                     help="跳过目录中前 N 个可读章节后再试导出（只适用于 --sample）")
     exp.add_argument("--output-dir")
     exp.add_argument("--force", action="store_true")
     exp.add_argument("--json", action="store_true")
+    inspector = sub.add_parser("inspect", help="本地 EPUB 逐章结构与字数检查；不访问微信读书")
+    inspector.add_argument("file", nargs="?", help="已有 EPUB 文件路径")
+    inspector.add_argument("--latest", action="store_true", help="自动检查本机最近生成的 EPUB")
+    inspector.add_argument("--expected-chapters", type=int)
+    inspector.add_argument("--json", action="store_true")
     status = sub.add_parser("status", help="无需账号联网即可查看已有本地任务状态")
     status.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -456,18 +488,36 @@ def main(argv: list[str] | None = None) -> int:
         except RuntimeError as exc:
             data = result("UPSTREAM_ERROR", reason=str(exc))
     elif args.command == "export":
-        if args.sample < 1 or args.sleep < 0 or (args.expected_chapters is not None and args.expected_chapters < 1):
-            parser.error("--sample 和 --expected-chapters 必须大于 0，--sleep 不得为负数")
+        if args.sample < 1 or args.sleep < 0 or args.skip < 0 or (args.expected_chapters is not None and args.expected_chapters < 1):
+            parser.error("--sample 和 --expected-chapters 必须大于 0，--skip 和 --sleep 不得为负数")
+        if args.full and args.skip:
+            parser.error("--full 不支持 --skip；请使用 --sample N --skip M 验证中段章节")
         try:
             data = export_book(args)
         except ValueError as exc:
             data = result("INVALID_URL", reason=str(exc),
                           action="先在 https://weread.qq.com/ 打开书架中的一本书，点击阅读并复制浏览器地址栏中的真实 /web/reader/... 链接；或双击 start.cmd 按提示输入。不要复制示例文字。")
+    elif args.command == "inspect":
+        if args.file and args.latest:
+            parser.error("inspect 的文件路径和 --latest 只能选择一种")
+        if args.expected_chapters is not None and args.expected_chapters < 1:
+            parser.error("--expected-chapters 必须大于 0")
+        target = Path(args.file).expanduser() if args.file else None
+        if args.latest:
+            candidates = list(LIBRARY.glob("*/*.epub")) if LIBRARY.exists() else []
+            target = max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+        if target is None:
+            data = result("NO_EPUB_FOUND", action="提供 EPUB 路径，或在试导出后运行 inspect --latest --json")
+        else:
+            validation = inspect_epub(target, expected=args.expected_chapters)
+            data = result(validation["status"], validation=validation,
+                          note="逐章字数、标题和资源仅用于诊断；与网页版目录比对后才能确认全文完整")
     else:
         reports = sorted(LIBRARY.glob("*/*.report.json")) if LIBRARY.exists() else []
         data = result("STATUS", jobs=[json.loads(p.read_text(encoding="utf-8")) for p in reports[-30:]])
     emit(data, as_json=args.json)
-    good = {"READY", "UPSTREAM_READY", "SESSION_SAVED", "FILES_READY_COMPLETENESS_UNVERIFIED", "STATUS"}
+    good = {"READY", "UPSTREAM_READY", "SESSION_SAVED", "FILES_READY_COMPLETENESS_UNVERIFIED",
+            "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "STATUS"}
     return 0 if data["status"] in good else 2
 
 

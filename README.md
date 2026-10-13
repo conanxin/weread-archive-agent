@@ -27,6 +27,9 @@ python wereadlab.py doctor --json
 # python wereadlab.py login
 $readerUrl = Read-Host "请粘贴从微信读书阅读页复制的完整 URL"
 python wereadlab.py export $readerUrl --sample 2 --format epub --format md --json
+python wereadlab.py inspect --latest --json
+# 如果前两章只有扉页、版权页，可额外抽查目录第 5、6 个可读章节（先跳过 4 章）：
+# python wereadlab.py export $readerUrl --sample 2 --skip 4 --format epub --format md --json
 # 两章验证成功后，才运行全书导出：
 # python wereadlab.py export $readerUrl --full --format epub --format pdf --format md --format txt --json
 python wereadlab.py status --json
@@ -38,7 +41,8 @@ python wereadlab.py status --json
 
 - `login` 首次安装 Python Playwright（需要联网）并打开本地浏览器供本人扫码；未装 Chromium 时依提示安装一次。**无人值守 Agent 不应尝试自动扫码。**
 - `export` 首次自动浅克隆上游仓库至 `.local/upstream/`。上游不在每次运行时自动更新，保持版本可复现。需要更新时执行 `python wereadlab.py upstream --update`。
-- 默认执行 **2 章试导出**；传 `--full` 才取当前账号实际可读的整书章节。
+- 默认执行 **2 章试导出**，即目录中前两个被识别为可读的章节，可能只是扉页/版权页。可以传 `--sample 2 --skip 4` 抽查目录中第 5、6 个可读章节；两次抽查结果会分开保存，避免误用缓存。传 `--full` 才取当前账号实际可读的整书章节。
+- `inspect --latest --json` 在本地逐章列出标题、文字字符数和图片引用数，**不再联网抓书**。看到 `STRUCTURE_PASS_COMPLETENESS_UNVERIFIED` 只表示结构正常，不证明全文齐全或文字完全正确。
 - 默认若 EPUB 已存在会直接复用，避免重复请求。需要重试传 `--force`。
 - 可用 `--expected-chapters N` 指定经过人工核对的**应有章节数**；结构检查不满足时不进行下一步转换。
 - 用 `--output-dir D:\Books\SomeBook` 指定输出目录；否则使用 `.local/library/<reader-id>/`。
