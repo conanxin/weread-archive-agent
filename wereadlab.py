@@ -492,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
     repair.add_argument("--latest", action="store_true", help="选择最近生成的本地部分 EPUB")
     repair.add_argument("--output", help="指定修复后的新 EPUB 路径；不会覆盖原文件")
     repair.add_argument("--max-images", type=int, default=500)
+    repair.add_argument("--format", action="append", choices=["epub", "pdf", "md", "txt"],
+                        help="修复成功后直接转换为指定格式")
     repair.add_argument("--json", action="store_true")
     inspector = sub.add_parser("inspect", help="本地 EPUB 逐章结构与字数检查；不访问微信读书")
     inspector.add_argument("file", nargs="?", help="已有 EPUB 文件路径")
@@ -543,11 +545,31 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 details = repair_epub_images(source, output, cookie_file=COOKIE, max_images=args.max_images)
                 validation = inspect_epub(output)
-                data = result(
-                    "IMAGES_REPAIRED" if validation["status"] == "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED" else "IMAGE_ASSETS_INCOMPLETE",
-                    image_repair=details, validation=validation,
-                    note="不会重新抓取章节；EPUB 结构通过仍需核对原书目录和图像内容"
-                )
+                ready = validation["status"] == "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED"
+                artifacts = {"epub": str(output)} if ready else {}
+                missing_formats = []
+                formats = set(args.format or ["epub"])
+                if ready and ("md" in formats or "txt" in formats):
+                    converted = markdown_from_epub(output, output.with_suffix(""),
+                                                   include_text="txt" in formats)
+                    artifacts.update({k: v for k, v in converted.items() if k in formats})
+                    if converted["unresolved_images"]:
+                        missing_formats.append("unresolved markdown image references")
+                if ready and "pdf" in formats:
+                    converter = calibre()
+                    if not converter:
+                        missing_formats.append("pdf: install Calibre")
+                    else:
+                        pdf_file = output.with_suffix(".pdf")
+                        proc = run([converter, str(output), str(pdf_file), "--paper-size", "a4"])
+                        if proc.returncode == 0 and pdf_file.is_file() and pdf_file.stat().st_size:
+                            artifacts["pdf"] = str(pdf_file)
+                        else:
+                            missing_formats.append("pdf: Calibre conversion failed")
+                status = ("FORMAT_PARTIAL" if missing_formats else "IMAGES_REPAIRED") if ready else "IMAGE_ASSETS_INCOMPLETE"
+                data = result(status, image_repair=details, validation=validation,
+                              artifacts=artifacts, missing_formats=missing_formats,
+                              note="不会重新抓取章节；EPUB 结构通过仍需核对原书目录和图像内容")
             except (OSError, ValueError, RuntimeError, zipfile.BadZipFile, ET.ParseError) as exc:
                 data = result("IMAGE_REPAIR_ERROR", reason=str(exc)[:300])
     elif args.command == "inspect":
