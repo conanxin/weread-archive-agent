@@ -70,6 +70,16 @@ python wereadlab.py catalog $readerUrl --json
 - 仅有 `CATALOG_READY` 不代表实际已完成一本书的正文、图片或 EPUB/PDF；下一阶段开发章节级检查点和可恢复的任务队列。
 - GitHub 测试使用合成目录；真实数据和登录凭证不得提交仓库。
 
+## P2-B1｜持久化章节任务队列（只建队，不下载正文）
+
+```powershell
+# 已有 catalog.json 后，在本地保存 22 条或其他真实数量的可导出章节任务
+python wereadlab.py queue init --latest --json
+python wereadlab.py queue status --latest --json
+```
+
+队列保存在该书的私有 `.local/library/<reader-id>/chapters.sqlite`，记录章节 UID、目录次序、提供方字数、PENDING / RUNNING / FAILED / COMPLETE、尝试次数和后续文件校验字段。重复初始化不会重置已有章节状态；目录章 ID / 次序改变则停止并请求显式校准。**此阶段只实现建队和状态查询；还没有章节执行 worker，也不能将 `QUEUE_READY` 视为整书下载完成。**
+
 ## 导出结果
 
 ```text
