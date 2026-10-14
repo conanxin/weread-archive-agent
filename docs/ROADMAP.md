@@ -37,6 +37,8 @@ Status date: 2026-10-14 (P2-D2 retrospective). Scope: personal-scale local autom
 - [x] Unique image asset namespaces per chapter, per-chapter CSS, complete EPUB nav/spine, optional Markdown/PDF conversion.
 - [x] Real-book EPUB/PDF/Markdown/TXT produced; 275-page PDF machine QA and representative nine-page visual audit; six owner-only Drive uploads verified by connector.
 - [x] CSS 19 duplicate warnings de-duplicated to one missing background asset under an unused simple class in static XHTML; reusable offline CSS audit added.
+- [x] P2-D3 bounded source-to-artifact normalized text comparison module and offline tests, with no source text in reports.
+- [ ] Execute and interpret the audit against real TXT fallback chapters and representative illustrated chapters.
 - [ ] Source-reader side-by-side final fidelity review for TXT fallback chapters, footnotes/captions and optional CSS styles; requires user acceptance.
 
 ## P3 — More automation, less friction

@@ -136,6 +136,21 @@ python tools/fidelity_audit.py --book-dir '.local/library/实际书籍目录' --
 
 完整的真实故障、根因与复用规则见 [P2-D2 经验复盘](docs/LESSONS_LEARNED_2026-10-14.md)。目前全书文件可以私有阅读，但只达到 `BOOK_FILES_READY_COMPLETENESS_UNVERIFIED`，最终与源阅读页逐字/逐图对照仍待确认。
 
+## P2-D3｜来源文字与最终章节的差异审计（限量、私有）
+
+前期已生成整书 EPUB/PDF/Markdown/TXT，但 **BOOK_FILES_READY_COMPLETENESS_UNVERIFIED** 不等于与原始阅读页逐字一致。新增工具对少量指定章节进行同一已授权接口的独立再次提取，将正文与本地章 EPUB 比较，只报告字符数、精确匹配状态与相似度；不会上传、打印或提交真实正文。
+
+```powershell
+cd D:\CodexData\weread-archive-agent
+# 使用已存在的私有 catalog.json 与会话 Cookie；替换为实际私有书籍目录
+$book = '.local\library\<reader-id>'
+python tools/source_parity_audit.py --book-dir $book --cookie-file '.local\session\weread.cookies.txt' --upstream-script '.local\upstream\weread.koplugin\scripts\fetch_weread_epub.py' --upstream-sha '<catalog-upstream-sha>' --checks '19:txt,20:txt,21:txt' --live --output "$book\final\source_parity_audit.json"
+```
+
+对比定义：Unicode NFC、忽略空白、去掉导出器自动插入的第一个章节标题，并将可见注释包装符 `〔注：〕` 与原注释 alt 文本对齐。纯粹的结构/空白差异可归一化；**任何正文标点、字词差异仍计入不一致**。
+
+这属于“从同一微信读书接口再次独立获取文本”的对照，**不是独立的出版社母版校勘，也不是像素级网页视觉比对**。仅可支持被检查的少量章节；原书全局保真需进一步审阅。
+
 ## 导出结果
 
 ```text
