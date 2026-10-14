@@ -1,5 +1,5 @@
 """Offline SQLite queue tests; no WeRead account or chapter text."""
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 import io
 import json
 from pathlib import Path
@@ -39,7 +39,7 @@ class QueueTests(unittest.TestCase):
             self.assertEqual(result["total_chapters"], 2)
             self.assertEqual(result["pending"], 2)
             self.assertEqual(result["complete"], 0)
-            with sqlite3.connect(db) as conn:
+            with closing(sqlite3.connect(db)) as conn:
                 items = conn.execute(
                     "SELECT chapter_uid, catalog_order, state FROM chapters ORDER BY ordinal"
                 ).fetchall()
@@ -52,8 +52,9 @@ class QueueTests(unittest.TestCase):
             catalog = sample_catalog(home)
             db = home / "chapters.sqlite"
             init_queue(catalog, db)
-            with sqlite3.connect(db) as conn:
+            with closing(sqlite3.connect(db)) as conn:
                 conn.execute("UPDATE chapters SET state='COMPLETE', attempts=1 WHERE chapter_uid='one'")
+                conn.commit()
             again = init_queue(catalog, db)
             self.assertEqual(again["complete"], 1)
             self.assertEqual(again["pending"], 1)
