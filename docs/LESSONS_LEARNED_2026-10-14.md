@@ -45,3 +45,12 @@ Date: 2026-10-14. This document contains anonymized engineering evidence, not ac
 - Keep issue #18 open until source-reader comparison is complete. Full open-source release, NAS and BOOK-ID-SEARCH integration are separate milestones.
 
 References: merged PRs #5, #6, #8, #9, #11–#13 and #15–#17; [fidelity issue #18](https://github.com/conanxin/weread-archive-agent/issues/18).
+
+## Addendum 2026-10-15 — Metadata, heading and newline parity
+
+- **Don't conflate visible body text with XHTML head metadata.** MarkdownWriter previously appended `<head><title>` text. PR #22 now only writes the visible body. A replay from the privately archived EPUB reproduced the old Markdown exactly after CRLF normalization, so the fix is grounded in an observed converter behavior, not a guess.
+- **Byte deltas require a newline-normalization baseline.** Original Windows Markdown was 471,465 bytes with 4,466 CRLF pairs; after CRLF→LF it was 466,999 bytes. Body-only output is 466,135 bytes; 864 normalized bytes were removed as non-body metadata, while 4,466 additional size bytes come solely from platform newline normalization. Never equate a cross-platform file-size decrease with deleted body text.
+- **Headline duplication and metadata leakage are distinct faults.** In the archived EPUB, 12/22 chapters contain two consecutive identical body H1s with zero meaningful text/images in between. The source writer's additional synthetic heading is a strong hypothesis. Do not remove any original heading before comparing source chapters; see issue #23.
+- **Private artifact versions should coexist.** Revised Markdown and a complete MD/TXT/174-image ZIP were uploaded privately under new names. Original EPUB/PDF and original Markdown remain unchanged so that the reproducibility evidence is not lost.
+- **Offline converter replay is not live source collation.** P2-D3 same-upstream text audit still needs the authorized home PC; the desktop connector was OFFLINE. This remains BOOK_FILES_READY_COMPLETENESS_UNVERIFIED, not FULL_BOOK_CONFIRMED.
+- Details: [P2-D3 offline QA](P2D3_OFFLINE_QA_2026-10-15.md).
