@@ -57,6 +57,19 @@ python wereadlab.py inspect --latest --json
 - 用 `--output-dir D:\Books\SomeBook` 指定输出目录；否则使用 `.local/library/<reader-id>/`。
 - 支持 `--format epub|pdf|md|txt`（可以重复使用）。缺少 Calibre 时仍保留 EPUB 和 Markdown，状态为 `FORMAT_PARTIAL`。
 
+## P2-A｜只读取目录，不启动整书导出
+
+```powershell
+cd D:\CodexData\weread-archive-agent
+$readerUrl = Read-Host "粘贴微信读书阅读地址"
+python wereadlab.py catalog $readerUrl --json
+```
+
+- `catalog` 调用已固定 SHA 的上游阅读状态及 `chapterInfos` 目录接口；**只获取书目和章节目录元数据**，不会下载章节正文/插图。
+- 结果写入私有 `.local/library/<reader-id>/catalog.json` 和 `catalog.report.json`。包含原目录顺序、章节 UID、标题、提供方字数统计、是否会被当前上游导出器选中；封面或零字数条目不直接计入可导出条数。
+- 仅有 `CATALOG_READY` 不代表实际已完成一本书的正文、图片或 EPUB/PDF；下一阶段开发章节级检查点和可恢复的任务队列。
+- GitHub 测试使用合成目录；真实数据和登录凭证不得提交仓库。
+
 ## 导出结果
 
 ```text
