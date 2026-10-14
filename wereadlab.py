@@ -28,6 +28,7 @@ from tools.repair_epub_images import repair_epub_images
 from tools.catalog_snapshot import fetch_catalog, save_catalog
 from tools.checkpoint_queue import init_queue, inspect_queue
 from tools.chapter_worker import run_chapter_worker
+from tools.book_assembly import assemble_book
 
 VERSION = "0.1.0"
 ROOT = Path(__file__).resolve().parent
@@ -544,6 +545,14 @@ def main(argv: list[str] | None = None) -> int:
     qrun.add_argument("--sleep", type=float, default=0.4)
     qrun.add_argument("--max-images", type=int, default=500)
     qrun.add_argument("--json", action="store_true")
+    book = sub.add_parser("book", help="从已完成章节合并 EPUB；不访问微信读书")
+    book_sub = book.add_subparsers(dest="book_action", required=True)
+    book_assemble = book_sub.add_parser("assemble", help="严格核验章数、UID、SHA 后合并")
+    book_assemble.add_argument("--latest", action="store_true")
+    book_assemble.add_argument("--db", help="章节任务数据库路径")
+    book_assemble.add_argument("--max-assets", type=int, default=4000)
+    book_assemble.add_argument("--format", action="append", choices=["epub","pdf","md","txt"])
+    book_assemble.add_argument("--json", action="store_true")
     exp = sub.add_parser("export", help="试导出两章，或用 --full 处理整本可读章节")
     exp.add_argument("url", help="https://weread.qq.com/web/reader/... ")
     scope = exp.add_mutually_exclusive_group()
@@ -586,6 +595,59 @@ def main(argv: list[str] | None = None) -> int:
             data = result("UPSTREAM_READY", sha=git_commit(UPSTREAM))
         except RuntimeError as exc:
             data = result("UPSTREAM_ERROR", reason=str(exc))
+    elif args.command == "book":
+        if args.db and args.latest:
+            parser.error("--db 与 --latest 不可同时使用")
+        if args.max_assets < 1:
+            parser.error("--max-assets 必须大于 0")
+        db = Path(args.db).expanduser() if args.db else None
+        if args.latest:
+            candidates = list(LIBRARY.glob("*/chapters.sqlite")) if LIBRARY.exists() else []
+            db = max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+        if db is None:
+            data = result("QUEUE_NOT_FOUND", action="先运行 catalog 与 queue init")
+        else:
+            target = db.parent / "final" / "book.epub"
+            report_path = db.parent / "final" / "book.report.json"
+            formats = set(args.format or ["epub"])
+            formats.add("epub")
+            try:
+                data = result(**assemble_book(
+                    db_path=db, catalog_path=db.with_name("catalog.json"),
+                    output=target, inspector=inspect_epub, max_total_assets=args.max_assets
+                ))
+                if data["status"] == "BOOK_EPUB_READY_COMPLETENESS_UNVERIFIED":
+                    artifacts = {"epub": str(target)}
+                    failures = []
+                    if "md" in formats or "txt" in formats:
+                        converted = markdown_from_epub(
+                            target, target.with_suffix(""),
+                            include_text="txt" in formats
+                        )
+                        artifacts.update({k:v for k,v in converted.items() if k in formats})
+                        if converted["unresolved_images"]:
+                            failures.append("MARKDOWN_UNRESOLVED_IMAGE")
+                    if "pdf" in formats:
+                        converter = calibre()
+                        if converter is None:
+                            failures.append("CALIBRE_NOT_FOUND")
+                        else:
+                            pdf = target.with_suffix(".pdf")
+                            proc = run([converter, str(target), str(pdf), "--paper-size", "a4"])
+                            if proc.returncode == 0 and pdf.is_file() and pdf.stat().st_size > 0:
+                                artifacts["pdf"] = str(pdf)
+                            else:
+                                failures.append("PDF_CONVERSION_FAILED")
+                    data["status"] = "FORMAT_PARTIAL" if failures else "BOOK_FILES_READY_COMPLETENESS_UNVERIFIED"
+                    data["artifacts"] = artifacts
+                    data["missing_formats"] = failures
+                save_report(report_path, data)
+            except (OSError, ValueError, RuntimeError, zipfile.BadZipFile, ET.ParseError) as exc:
+                data = result("ASSEMBLY_ERROR", error_code=(
+                    str(exc) if str(exc).isupper() and len(str(exc)) < 80
+                    else type(exc).__name__
+                ), note="未标记整书完成；请检查本地章节队列和报告") 
+                save_report(report_path, data)
     elif args.command == "queue":
         try:
             if args.queue_action == "init":
@@ -734,7 +796,8 @@ def main(argv: list[str] | None = None) -> int:
     good = {"READY", "UPSTREAM_READY", "SESSION_SAVED", "FILES_READY_COMPLETENESS_UNVERIFIED",
             "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "IMAGES_REPAIRED", "CATALOG_READY",
             "QUEUE_READY", "WORKER_PROGRESS", "WORKER_IDLE",
-            "CHAPTERS_FETCHED_PENDING_FULL_QA", "STATUS"}
+            "CHAPTERS_FETCHED_PENDING_FULL_QA",
+            "BOOK_FILES_READY_COMPLETENESS_UNVERIFIED", "STATUS"}
     return 0 if data["status"] in good else 2
 
 

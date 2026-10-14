@@ -31,6 +31,12 @@ Status date: 2026-10-13. Scope: personal-scale local automation; optional NAS an
 - [ ] De-duplicate chapters and image assets, preserve stable reader and formal book IDs separately.
 - [ ] Limit concurrency to one book/session; backoff on errors and respect human challenges.
 
+### P2-C chapter assembly
+
+- [x] Strict local-only book assembly checks eligible catalog entries, ordered queue, 22/22-or-block, verified per-chapter SHA256 and EPUB structure.
+- [x] Unique image asset namespaces per chapter, per-chapter CSS, complete EPUB nav/spine, optional Markdown/PDF conversion.
+- [ ] Real-book full assembly gate, CSS decoration degradation audit, visual review of first/middle/last, and final private Drive release.
+
 ## P3 — More automation, less friction
 
 - [ ] Simple local browser UI or Windows EXE, one-click install/update.
