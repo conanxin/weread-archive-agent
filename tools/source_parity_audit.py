@@ -9,6 +9,7 @@ Same-source re-fetch is NOT an independent source-reader visual comparison.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 import hashlib
@@ -163,7 +164,7 @@ def audit_live(
     if not all(n <= len(selected) for n, _ in checks):
         raise ValueError("ORDINAL_OUT_OF_CATALOG_RANGE")
 
-    with sqlite3.connect(db_file) as con:
+    with closing(sqlite3.connect(db_file)) as con:
         rows = con.execute(
             "SELECT ordinal,state,artifact_path,artifact_sha256 FROM chapters ORDER BY ordinal"
         ).fetchall()
