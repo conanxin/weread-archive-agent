@@ -133,7 +133,7 @@ def _error_code(exc: Exception) -> str:
     """Stable non-sensitive categories. Never output exception text or URLs."""
     message = str(exc).lower()
     for code in (
-        "IMAGE_ASSETS_INCOMPLETE", "CONTENT_SUSPICIOUS", "STRUCTURE_INCOMPLETE",
+        "IMAGE_ASSETS_INCOMPLETE", "CONTENT_SUSPICIOUS", "TXT_FALLBACK_INCOMPLETE", "STRUCTURE_INCOMPLETE",
         "CATALOG_CHANGED_RECONCILIATION_REQUIRED", "UPSTREAM_CATALOG_CHANGED",
         "FORMAL_BOOK_ID_MISMATCH", "UPSTREAM_SHA_MISMATCH", "WORKER_BUSY",
     ):
