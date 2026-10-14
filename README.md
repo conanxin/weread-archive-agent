@@ -136,20 +136,19 @@ python tools/fidelity_audit.py --book-dir '.local/library/实际书籍目录' --
 
 完整的真实故障、根因与复用规则见 [P2-D2 经验复盘](docs/LESSONS_LEARNED_2026-10-14.md)。目前全书文件可以私有阅读，但只达到 `BOOK_FILES_READY_COMPLETENESS_UNVERIFIED`，最终与源阅读页逐字/逐图对照仍待确认。
 
-## P2-D3｜来源文字与最终章节的差异审计（限量、私有）
+## P2-D3｜一句命令执行少量来源正文对照
 
-前期已生成整书 EPUB/PDF/Markdown/TXT，但 **BOOK_FILES_READY_COMPLETENESS_UNVERIFIED** 不等于与原始阅读页逐字一致。新增工具对少量指定章节进行同一已授权接口的独立再次提取，将正文与本地章 EPUB 比较，只报告字符数、精确匹配状态与相似度；不会上传、打印或提交真实正文。
+整书 EPUB/PDF 生成成功后，使用 `source-audit` 在已获阅读权限的本地电脑上抽查来源。无需手工填写书籍 ID、上游脚本位置或 SHA，程序自动读取已有 `.local` 中的目录、会话和固定上游版本。
 
 ```powershell
 cd D:\CodexData\weread-archive-agent
-# 使用已存在的私有 catalog.json 与会话 Cookie；替换为实际私有书籍目录
-$book = '.local\library\<reader-id>'
-python tools/source_parity_audit.py --book-dir $book --cookie-file '.local\session\weread.cookies.txt' --upstream-script '.local\upstream\weread.koplugin\scripts\fetch_weread_epub.py' --upstream-sha '<catalog-upstream-sha>' --checks '19:txt,20:txt,21:txt' --live --output "$book\final\source_parity_audit.json"
+python wereadlab.py source-audit --latest --checks "19:txt,20:txt,21:txt" --live --json
 ```
 
-对比定义：Unicode NFC、忽略空白、去掉导出器自动插入的第一个章节标题，并将可见注释包装符 `〔注：〕` 与原注释 alt 文本对齐。纯粹的结构/空白差异可归一化；**任何正文标点、字词差异仍计入不一致**。
-
-这属于“从同一微信读书接口再次独立获取文本”的对照，**不是独立的出版社母版校勘，也不是像素级网页视觉比对**。仅可支持被检查的少量章节；原书全局保真需进一步审阅。
+- `--live` 必须显式给出；不传时不访问微信读书正文。最多校验六个指定章节，默认选择本书的三个 TXT 备用章节。独立入口 `tools/source_parity_audit.py` 仍可用于特别调试。
+- 真实回执只在 `.local/library/<reader-id>/final/source_parity_audit.json` 中保存章节序号、数量、精确匹配状态、相似度，不含全文和 Cookie。
+- 比较标准为 NFC Unicode、去空白、去导出器自动加的第一个章节标题，以及将可见注释标记和原始 alt 文本对齐。**标点和字词差异不能忽略**。
+- `SOURCE_PARITY_EXACT_FOR_CHECKED_CHAPTERS` 仅说明指定章节的文本与同一服务重新获取的文本一致；不等于出版社母版校勘、图片/脚注保真，也不等于全书终验完成。
 
 ## 导出结果
 
