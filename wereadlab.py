@@ -303,9 +303,19 @@ class MarkdownWriter(HTMLParser):
         self.names = names
         self.image_map = image_map
         self.missing_images: list[str] = []
+        self.in_body = False
+        self.skip_depth = 0
 
     def handle_starttag(self, tag, attrs):
         tag = tag.lower()
+        if tag == "body":
+            self.in_body = True
+            return
+        if self.in_body and tag in {"script", "style", "noscript"}:
+            self.skip_depth += 1
+            return
+        if not self.in_body or self.skip_depth:
+            return
         if tag in {"p", "div", "blockquote", "li"}:
             self.parts.append("\n\n" + ("- " if tag == "li" else ""))
         if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
@@ -324,8 +334,16 @@ class MarkdownWriter(HTMLParser):
             local = self.image_map.setdefault(original, f"images/{len(self.image_map)+1:04d}{Path(original).suffix or '.jpg'}")
             self.parts.append(f"\n\n![image]({local})\n\n")
 
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in {"script", "style", "noscript"} and self.skip_depth:
+            self.skip_depth -= 1
+        elif tag == "body":
+            self.in_body = False
+
     def handle_data(self, data):
-        self.parts.append(data)
+        if self.in_body and not self.skip_depth:
+            self.parts.append(data)
 
 
 def markdown_from_epub(path: Path, directory: Path, *, include_text: bool = False) -> dict:
