@@ -14,6 +14,7 @@ Status date: 2026-10-13. Scope: personal-scale local automation; optional NAS an
 
 ## P1 — Reliability first
 
+- [x] Implement CLI for local catalog snapshot (metadata-only); require real-book run before marking catalog count verified.
 - [ ] Capture real catalog count, chapter IDs and per-chapter word counts before extraction.
 - [ ] Chapter-level SHA and evidence; distinguish visual completeness from mere structural completeness.
 - [ ] Error taxonomies: login expiration, App-only, payment/access, throttling, parser breakage, image omissions.
