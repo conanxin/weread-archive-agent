@@ -1,8 +1,13 @@
 """Synthetic-only checks for P2-D3 source-to-exported-text parity audit."""
 from pathlib import Path
+from contextlib import redirect_stdout
+import io
+import json
 import tempfile
 import unittest
+from unittest import mock
 
+import wereadlab as app
 from tools.source_parity_audit import (
     normalized_body, compare_xhtml, parse_checks, audit_live
 )
@@ -129,6 +134,74 @@ class TestLiveFake(unittest.TestCase):
                     upstream_sha="pinned", checks=[(1, "txt")],
                     provider=provider
                 )
+
+
+class TestAgentCli(unittest.TestCase):
+    def test_no_live_flag_blocks_without_network(self):
+        captured = io.StringIO()
+        with mock.patch.object(app, "audit_source_parity") as mocked, redirect_stdout(captured):
+            code = app.main(["source-audit", "--latest", "--json"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(captured.getvalue())["status"],
+                         "SOURCE_AUDIT_REQUIRES_EXPLICIT_LIVE")
+        mocked.assert_not_called()
+
+    def test_private_report_and_machine_status(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            directory, catalog, db, cookie = fixture_workspace(root)
+            report = {
+                "status": "SOURCE_PARITY_EXACT_FOR_CHECKED_CHAPTERS",
+                "chapters_checked": 3,
+                "chapters_exact": 3,
+                "chapters_with_differences": 0,
+                "results": [
+                    {"ordinal": n, "mode": "txt", "exact": True}
+                    for n in (19, 20, 21)
+                ],
+            }
+            with mock.patch.object(app, "LIBRARY", root/"library"), \
+                 mock.patch.object(app, "COOKIE", cookie), \
+                 mock.patch.object(app, "ensure_upstream", return_value=root/"upstream.py"), \
+                 mock.patch.object(app, "git_commit", return_value="pinned"), \
+                 mock.patch.object(app, "audit_source_parity", return_value=report) as mocked:
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = app.main([
+                        "source-audit", "--latest",
+                        "--checks", "19:txt,20:txt,21:txt",
+                        "--live", "--json"
+                    ])
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "SOURCE_PARITY_EXACT_FOR_CHECKED_CHAPTERS")
+            self.assertTrue((directory/"final/source_parity_audit.json").is_file())
+            self.assertEqual(mocked.call_args.kwargs["checks"],
+                             [(19, "txt"), (20, "txt"), (21, "txt")])
+            self.assertNotIn("cookie", json.dumps(payload).lower())
+
+    def test_difference_returns_nonzero_and_keeps_report(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            directory, catalog, db, cookie=fixture_workspace(root)
+            report={
+                "status":"SOURCE_PARITY_DIFFERENCES_REQUIRE_REVIEW",
+                "chapters_checked":1,"chapters_exact":0,
+                "chapters_with_differences":1, "results":[{"ordinal":19,"exact":False}]
+            }
+            with mock.patch.object(app,"LIBRARY",root/"library"), \
+                 mock.patch.object(app,"COOKIE",cookie), \
+                 mock.patch.object(app,"ensure_upstream",return_value=root/"upstream.py"), \
+                 mock.patch.object(app,"git_commit",return_value="pinned"), \
+                 mock.patch.object(app,"audit_source_parity",return_value=report):
+                output=io.StringIO()
+                with redirect_stdout(output):
+                    code=app.main(["source-audit","--latest","--checks","19:txt",
+                                   "--live","--json"])
+            self.assertEqual(code,2)
+            self.assertEqual(json.loads(output.getvalue())["status"],
+                             "SOURCE_PARITY_DIFFERENCES_REQUIRE_REVIEW")
+            self.assertTrue((directory/"final/source_parity_audit.json").is_file())
 
 
 if __name__ == "__main__":
