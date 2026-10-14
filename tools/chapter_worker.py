@@ -174,7 +174,7 @@ def _valid_chapter(
     # The provider's wordCount estimate is not an exact text length. Only
     # reject extreme truncation in a substantive chapter; do not reject
     # 7-character divider chapters or 100-character copyright notices.
-    if provider_words >= 1000 and inspected.get("text_characters", 0) < provider_words * 0.10:
+    if provider_words >= 500 and inspected.get("text_characters", 0) < provider_words * 0.10:
         return False, inspected, "CONTENT_SUSPICIOUS"
     return True, inspected, None
 
@@ -206,7 +206,7 @@ def _txt_fallback_epub(
         ok, report, _ = _valid_chapter(
             fallback, inspector=inspector, provider_words=provider_words
         )
-        if ok and (provider_words < 1000 or
+        if ok and (provider_words < 500 or
                    report["text_characters"] >= provider_words * 0.60):
             return fallback
     title, xhtml, css, assets = provider.fetch_chapter(
@@ -221,7 +221,7 @@ def _txt_fallback_epub(
     valid, report, code = _valid_chapter(
         staged, inspector=inspector, provider_words=provider_words
     )
-    if not valid or (provider_words >= 1000 and
+    if not valid or (provider_words >= 500 and
                      report["text_characters"] < provider_words * 0.60):
         staged.unlink(missing_ok=True)
         raise ValueError("TXT_FALLBACK_INCOMPLETE")
