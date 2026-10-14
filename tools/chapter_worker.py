@@ -135,7 +135,7 @@ def _error_code(exc: Exception) -> str:
     for code in (
         "IMAGE_ASSETS_INCOMPLETE", "CONTENT_SUSPICIOUS", "STRUCTURE_INCOMPLETE",
         "CATALOG_CHANGED_RECONCILIATION_REQUIRED", "UPSTREAM_CATALOG_CHANGED",
-        "FORMAL_BOOK_ID_MISMATCH", "WORKER_BUSY",
+        "FORMAL_BOOK_ID_MISMATCH", "UPSTREAM_SHA_MISMATCH", "WORKER_BUSY",
     ):
         if code.lower() in message:
             return code
@@ -300,9 +300,9 @@ def run_chapter_worker(
                     invalid_completed.append(ordinal)
             if invalid_completed:
                 return {
+                    **queue_report(conn, db_path=db_path),
                     "status": "COMPLETED_ARTIFACT_INTEGRITY_ERROR",
                     "affected_ordinals": invalid_completed,
-                    **queue_report(conn, db_path=db_path),
                 }
 
             # Book-level OS lock ensures these states are left over from a
@@ -320,9 +320,9 @@ def run_chapter_worker(
             ).fetchall()
             if not candidates:
                 return {
+                    **queue_report(conn, db_path=db_path),
                     "status": "WORKER_IDLE",
                     "attempted": 0, "completed_now": 0,
-                    **queue_report(conn, db_path=db_path),
                 }
 
             provider = provider or load_provider(upstream_script)
@@ -338,10 +338,10 @@ def run_chapter_worker(
                 )
             except Exception as exc:
                 return {
+                    **queue_report(conn, db_path=db_path),
                     "status": "WORKER_BLOCKED",
                     "reason_code": _error_code(exc),
                     "attempted": 0,
-                    **queue_report(conn, db_path=db_path),
                 }
 
             attempted = 0
