@@ -154,6 +154,51 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(provider.fetch_calls,[10]) # no duplicated chapter request
             self.assertEqual(app.inspect_epub(directory/"chapters/0001.epub")["remote_images"],[])
 
+    def test_txt_fallback_recovers_truncated_epub_without_erasing_source(self):
+        class TxtAwareProvider(FixtureProvider):
+            def __init__(self, *, provide_txt=True):
+                super().__init__()
+                self.mode="auto"
+                self.provide_txt=provide_txt
+                self.modes=[]
+            def fetch_chapter(self, client, *, book_id, chapter, sleep_seconds, content_format):
+                mode=content_format[0]
+                self.mode=mode
+                self.modes.append(mode)
+                self.fetch_calls.append(chapter["chapterUid"])
+                text=("合成中文正文" * 180) if mode=="txt" and self.provide_txt else "短"
+                return chapter["title"], text, "", []
+            def write_epub(self, target, *, title, author, chapters, css):
+                make_one_chapter(target, chapters[0][1], with_remote_image=(self.mode=="auto"))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            book, cat, db, cookie = fixture_workspace(Path(tmp))
+            provider=TxtAwareProvider(provide_txt=False)
+            jpg=b"\xff\xd8\xff"+b"\0"*80
+            def repair(source, output, **kw):
+                return repair_epub_images(
+                    source, output, downloader=lambda url:(jpg, ".jpg", "image/jpeg"))
+            first=run(provider, cat, db, cookie, repairer=repair)
+            self.assertEqual(first["status"],"WORKER_PARTIAL")
+            self.assertEqual(first["failures"][0]["reason_code"],"TXT_FALLBACK_INCOMPLETE")
+            self.assertTrue((book/"chapters/0001.partial.epub").exists())
+            self.assertEqual(provider.modes,["auto","txt"])
+            provider.provide_txt=True
+            second=run(provider, cat, db, cookie, repairer=repair, retry_failed=True)
+            self.assertEqual(second["status"],"WORKER_PROGRESS")
+            self.assertEqual(second["txt_fallback_ordinals"],[1])
+            self.assertEqual(provider.modes,["auto","txt","txt"]) # no epub refetch
+            self.assertTrue((book/"chapters/0001.txt-fallback.partial.epub").exists())
+            self.assertTrue((book/"chapters/0001.partial.epub").exists())
+            self.assertEqual(app.inspect_epub(book/"chapters/0001.epub")["status"],
+                             "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED")
+            self.assertGreater(app.inspect_epub(book/"chapters/0001.epub")["text_characters"],1000)
+            self.assertEqual(second["complete"],1)
+            third=run(provider, cat, db, cookie, limit=1)
+            self.assertEqual(third["completed_now"],1) # now processes the second chapter
+            self.assertEqual(third["txt_fallback_ordinals"],[2])
+            self.assertEqual(provider.modes,["auto","txt","txt","auto","txt"])
+
     def test_invalid_complete_hash_is_not_silently_replaced(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory,cat,db,cookie=fixture_workspace(Path(tmp))
