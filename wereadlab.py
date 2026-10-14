@@ -27,6 +27,7 @@ import zipfile
 from tools.repair_epub_images import repair_epub_images
 from tools.catalog_snapshot import fetch_catalog, save_catalog
 from tools.checkpoint_queue import init_queue, inspect_queue
+from tools.chapter_worker import run_chapter_worker
 
 VERSION = "0.1.0"
 ROOT = Path(__file__).resolve().parent
@@ -535,6 +536,14 @@ def main(argv: list[str] | None = None) -> int:
     qstatus.add_argument("--latest", action="store_true")
     qstatus.add_argument("--db", help="chapters.sqlite 的本地路径")
     qstatus.add_argument("--json", action="store_true")
+    qrun = qsub.add_parser("run", help="逐章采集，默认每次最多一章；不会合并整书")
+    qrun.add_argument("--latest", action="store_true", help="选取最近初始化的本地章节队列")
+    qrun.add_argument("--db", help="章节 SQLite 任务表路径")
+    qrun.add_argument("--limit", type=int, default=1, help="本次最多处理几章（1-10）")
+    qrun.add_argument("--retry-failed", action="store_true", help="允许重试 FAILED/INTERRUPTED 章节")
+    qrun.add_argument("--sleep", type=float, default=0.4)
+    qrun.add_argument("--max-images", type=int, default=500)
+    qrun.add_argument("--json", action="store_true")
     exp = sub.add_parser("export", help="试导出两章，或用 --full 处理整本可读章节")
     exp.add_argument("url", help="https://weread.qq.com/web/reader/... ")
     scope = exp.add_mutually_exclusive_group()
@@ -591,7 +600,7 @@ def main(argv: list[str] | None = None) -> int:
                                   action="先运行 wereadlab.py catalog <阅读页URL> --json，再 queue init --latest")
                 else:
                     data = result(**init_queue(source, source.with_name("chapters.sqlite")))
-            else:
+            elif args.queue_action == "status":
                 if args.db and args.latest:
                     parser.error("--db 与 --latest 不可同时使用")
                 source = Path(args.db).expanduser() if args.db else None
@@ -599,9 +608,49 @@ def main(argv: list[str] | None = None) -> int:
                     candidates = list(LIBRARY.glob("*/chapters.sqlite")) if LIBRARY.exists() else []
                     source = max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
                 data = result(**inspect_queue(source)) if source else result("QUEUE_NOT_FOUND")
-        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-            data = result("QUEUE_ERROR", error_type=type(exc).__name__,
-                          reason=str(exc) if isinstance(exc, ValueError) else "Local metadata unavailable")
+            else:
+                if args.db and args.latest:
+                    parser.error("--db 与 --latest 不可同时使用")
+                if not 1 <= args.limit <= 10 or args.sleep < 0 or args.max_images < 1:
+                    parser.error("--limit 必须在 1-10，--sleep >= 0，--max-images > 0")
+                db = Path(args.db).expanduser() if args.db else None
+                if args.latest:
+                    candidates = list(LIBRARY.glob("*/chapters.sqlite")) if LIBRARY.exists() else []
+                    db = max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+                if db is None:
+                    data = result("QUEUE_NOT_FOUND", action="先执行 catalog 和 queue init --latest")
+                else:
+                    cat = db.with_name("catalog.json")
+                    if not cat.is_file():
+                        data = result("CATALOG_NOT_FOUND", action="请检查本地目录快照")
+                    else:
+                        info = json.loads(cat.read_text(encoding="utf-8"))
+                        saved_reader = str(info["book"]["reader_id"])
+                        saved_url = "https://weread.qq.com/web/reader/" + saved_reader
+                        reader_id(saved_url)
+                        script = ensure_upstream()
+                        data = result(**run_chapter_worker(
+                            db_path=db,
+                            catalog_path=cat,
+                            reader_url=saved_url,
+                            cookie_file=COOKIE,
+                            upstream_script=script,
+                            upstream_sha=git_commit(UPSTREAM),
+                            inspector=inspect_epub,
+                            repairer=repair_epub_images,
+                            limit=args.limit,
+                            retry_failed=args.retry_failed,
+                            sleep=args.sleep,
+                            max_images=args.max_images,
+                        ))
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, json.JSONDecodeError) as exc:
+            code = str(exc) if str(exc) in {
+                "WORKER_BUSY", "CATALOG_SNAPSHOT_HASH_MISMATCH",
+                "CATALOG_CHANGED_RECONCILIATION_REQUIRED", "UPSTREAM_SHA_MISMATCH",
+                "CATALOG_OR_QUEUE_MISSING",
+            } else type(exc).__name__
+            data = result("QUEUE_ERROR", error_code=code,
+                          action="检查本地目录/队列与上游版本，勿自动重置已完成章节")
     elif args.command == "catalog":
         try:
             data = catalog_book(args)
@@ -683,7 +732,9 @@ def main(argv: list[str] | None = None) -> int:
         data = result("STATUS", jobs=[json.loads(p.read_text(encoding="utf-8")) for p in reports[-30:]])
     emit(data, as_json=args.json)
     good = {"READY", "UPSTREAM_READY", "SESSION_SAVED", "FILES_READY_COMPLETENESS_UNVERIFIED",
-            "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "IMAGES_REPAIRED", "CATALOG_READY", "QUEUE_READY", "STATUS"}
+            "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "IMAGES_REPAIRED", "CATALOG_READY",
+            "QUEUE_READY", "WORKER_PROGRESS", "WORKER_IDLE",
+            "CHAPTERS_FETCHED_PENDING_FULL_QA", "STATUS"}
     return 0 if data["status"] in good else 2
 
 
