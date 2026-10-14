@@ -98,6 +98,14 @@ python wereadlab.py queue status --latest --json
 - 单本书 OS 文件锁防止并发 Worker；上次崩溃的 `RUNNING` 标为 `FAILED/INTERRUPTED`，供审查后重试；已有完成文件 SHA 不符会停止而非自动覆盖。
 - `--limit` 范围为 1–10，默认 1；每次最多运行指定章节数，遇到权限、登录、章节或图片错误就停。不启动整书合并/上传；`WORKER_PROGRESS` 或 `CHAPTERS_FETCHED_PENDING_FULL_QA` **不等于最终完整电子书**。
 
+## P2-B3｜处理内容过短的特殊 EPUB 章节
+
+- 当目录预计有明显正文（500 字及以上），但 EPUB 中得到的正文少于预计的 10%，保持 `CONTENT_SUSPICIOUS` 判断，不接受残缺图像版内容。
+- 小范围真实验证表明个别附录/后记 EPUB 只含少量装饰图片，但同一书的 TXT 文本通道有完整段落。新 Worker 在此类异常时可**自动尝试一次 TXT 通道**，并验证正文达到目录字数估算的至少 60%。
+- 成功则保存 `chapters/NNNN.txt-fallback.partial.epub`，原来的 `NNNN.partial.epub` 和 `NNNN.images.partial.epub` 保留为独立证据；最终章节采用经验证的文本备用版本。
+- 返回 `txt_fallback_ordinals` 用来报告内容恢复的章节序号。若 TXT 仍不完整，标记 `TXT_FALLBACK_INCOMPLETE` 并停止，不因图像 EPUB 可打开就冒称成功。合并成书时单独抽查这些章节版式/插图。
+- 已有失败章节可用 `python wereadlab.py queue run --latest --limit 1 --retry-failed --json` 明确允许重试；优先复用已有本地 EPUB 半成品。
+
 ## P2-C｜合并已验收的章节（不访问微信读书）
 
 所有目录中被选中的章节均已在 SQLite 标记 `COMPLETE`，并有通过 SHA256 的本地独立 EPUB 后，才能运行：

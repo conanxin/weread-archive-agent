@@ -133,7 +133,7 @@ def _error_code(exc: Exception) -> str:
     """Stable non-sensitive categories. Never output exception text or URLs."""
     message = str(exc).lower()
     for code in (
-        "IMAGE_ASSETS_INCOMPLETE", "CONTENT_SUSPICIOUS", "STRUCTURE_INCOMPLETE",
+        "IMAGE_ASSETS_INCOMPLETE", "CONTENT_SUSPICIOUS", "TXT_FALLBACK_INCOMPLETE", "STRUCTURE_INCOMPLETE",
         "CATALOG_CHANGED_RECONCILIATION_REQUIRED", "UPSTREAM_CATALOG_CHANGED",
         "FORMAL_BOOK_ID_MISMATCH", "UPSTREAM_SHA_MISMATCH", "WORKER_BUSY",
     ):
@@ -174,7 +174,7 @@ def _valid_chapter(
     # The provider's wordCount estimate is not an exact text length. Only
     # reject extreme truncation in a substantive chapter; do not reject
     # 7-character divider chapters or 100-character copyright notices.
-    if provider_words >= 1000 and inspected.get("text_characters", 0) < provider_words * 0.10:
+    if provider_words >= 500 and inspected.get("text_characters", 0) < provider_words * 0.10:
         return False, inspected, "CONTENT_SUSPICIOUS"
     return True, inspected, None
 
@@ -190,12 +190,51 @@ def _chapter_paths(directory: Path, ordinal: int) -> tuple[Path, Path, Path]:
     )
 
 
+def _txt_fallback_epub(
+    *,
+    raw: Path, ordinal: int, chapter: dict,
+    provider, client, book_id: str, sleep: float,
+    inspector: Callable, provider_words: int,
+) -> Path:
+    """Recover meaningful text from the TXT channel only when EPUB is truncated.
+
+    Kept separately so no original image-oriented EPUB is discarded.
+    A provider word-count mismatch above 40% continues to fail closed.
+    """
+    fallback = raw.with_name(f"{ordinal:04d}.txt-fallback.partial.epub")
+    if fallback.is_file():
+        ok, report, _ = _valid_chapter(
+            fallback, inspector=inspector, provider_words=provider_words
+        )
+        if ok and (provider_words < 500 or
+                   report["text_characters"] >= provider_words * 0.60):
+            return fallback
+    title, xhtml, css, assets = provider.fetch_chapter(
+        client, book_id=book_id, chapter=chapter,
+        sleep_seconds=sleep, content_format=["txt"],
+    )
+    staged = fallback.with_name(fallback.name + ".writing")
+    provider.write_epub(
+        staged, title=title, author="", chapters=[(title, xhtml, assets)],
+        css=css,
+    )
+    valid, report, code = _valid_chapter(
+        staged, inspector=inspector, provider_words=provider_words
+    )
+    if not valid or (provider_words >= 500 and
+                     report["text_characters"] < provider_words * 0.60):
+        staged.unlink(missing_ok=True)
+        raise ValueError("TXT_FALLBACK_INCOMPLETE")
+    os.replace(staged, fallback)
+    return fallback
+
+
 def _resume_or_capture(
     *,
     directory: Path, row: dict, chapter: dict, provider,
     client, book_id: str, sleep: float, inspector: Callable,
     repairer: Callable, cookie_file: Path, max_images: int,
-) -> tuple[Path, dict, bool]:
+) -> tuple[Path, dict, bool, str]:
     ordinal = int(row["ordinal"])
     provider_words = int(row["provider_words"])
     raw, image_partial, final = _chapter_paths(directory, ordinal)
@@ -204,7 +243,8 @@ def _resume_or_capture(
             final, inspector=inspector, provider_words=provider_words
         )
         if ok:
-            return final, checked, True
+            saved_fallback = raw.with_name(f"{ordinal:04d}.txt-fallback.partial.epub")
+            return final, checked, True, ("txt_fallback" if saved_fallback.is_file() else "epub")
         raise ValueError(code or "STRUCTURE_INCOMPLETE")
 
     # A checkpoint from a previous attempt is usable without refetching text.
@@ -234,17 +274,31 @@ def _resume_or_capture(
     if checked["status"] != GOOD_EPUB and (
         checked.get("broken_images") or checked.get("remote_images")
     ):
-        repairer(
-            raw, image_partial, cookie_file=cookie_file,
-            max_images=max_images,
-        )
-        if not image_partial.is_file():
-            raise ValueError("IMAGE_ASSETS_INCOMPLETE")
-        source = image_partial
+        if image_partial.is_file() and inspector(image_partial, expected=1)["status"] == GOOD_EPUB:
+            source = image_partial
+        else:
+            repairer(
+                raw, image_partial, cookie_file=cookie_file,
+                max_images=max_images,
+            )
+            if not image_partial.is_file():
+                raise ValueError("IMAGE_ASSETS_INCOMPLETE")
+            source = image_partial
 
     ok, checked, code = _valid_chapter(
         source, inspector=inspector, provider_words=provider_words
     )
+    content_source = "epub"
+    if not ok and code == "CONTENT_SUSPICIOUS":
+        source = _txt_fallback_epub(
+            raw=raw, ordinal=ordinal, chapter=chapter, provider=provider,
+            client=client, book_id=book_id, sleep=sleep,
+            inspector=inspector, provider_words=provider_words,
+        )
+        content_source = "txt_fallback"
+        ok, checked, code = _valid_chapter(
+            source, inspector=inspector, provider_words=provider_words
+        )
     if not ok:
         if checked.get("broken_images") or checked.get("remote_images"):
             raise ValueError("IMAGE_ASSETS_INCOMPLETE")
@@ -254,7 +308,7 @@ def _resume_or_capture(
     staged_final = final.with_name(final.name + ".writing")
     shutil.copyfile(source, staged_final)
     os.replace(staged_final, final)
-    return final, checked, False
+    return final, checked, False, content_source
 
 
 def run_chapter_worker(
@@ -350,6 +404,7 @@ def run_chapter_worker(
             completed_now = 0
             reused_checkpoints = 0
             failures: list[dict] = []
+            fallback_ordinals: list[int] = []
             book_id = str(catalog["book"]["formal_book_id"])
             for ordinal, uid, title, provider_words, state, attempts in candidates[:limit]:
                 with conn:
@@ -360,7 +415,7 @@ def run_chapter_worker(
                     )
                 attempted += 1
                 try:
-                    path, checked, reused = _resume_or_capture(
+                    path, checked, reused, source_mode = _resume_or_capture(
                         directory=db_path.parent,
                         row={"ordinal": ordinal, "provider_words": provider_words},
                         chapter=chapters_by_uid[uid], provider=provider,
@@ -377,6 +432,8 @@ def run_chapter_worker(
                     completed_now += 1
                     if reused:
                         reused_checkpoints += 1
+                    if source_mode == "txt_fallback":
+                        fallback_ordinals.append(ordinal)
                 except Exception as exc:
                     code = _error_code(exc)
                     _set_state(conn, ordinal, "FAILED", error_code=code)
@@ -399,6 +456,7 @@ def run_chapter_worker(
                 "attempted": attempted,
                 "completed_now": completed_now,
                 "reused_finished_artifacts": reused_checkpoints,
+                "txt_fallback_ordinals": fallback_ordinals,
                 "failures": failures,
                 "note": (
                     "章节存储通过门禁不代表整书完整；本阶段没有 EPUB 合并/出版/云盘上传。"
