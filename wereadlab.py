@@ -25,6 +25,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 from tools.repair_epub_images import repair_epub_images
+from tools.catalog_snapshot import fetch_catalog, save_catalog
 
 VERSION = "0.1.0"
 ROOT = Path(__file__).resolve().parent
@@ -465,6 +466,51 @@ def export_book(args) -> dict:
         return save_report(job_path, {**data, "status": "ERROR", "reason": str(exc)[:500]})
 
 
+def catalog_book(args) -> dict:
+    book_key = reader_id(args.url)
+    destination = (Path(args.output_dir).resolve() if args.output_dir
+                   else LIBRARY / book_key)
+    report_file = destination / "catalog.report.json"
+    if not COOKIE.is_file():
+        return save_report(report_file, result(
+            "LOGIN_REQUIRED", action="python wereadlab.py login"
+        ))
+    try:
+        script = ensure_upstream()
+        sha = git_commit(UPSTREAM)
+        snapshot = fetch_catalog(
+            reader_url=args.url,
+            reader_id=book_key,
+            cookie_file=COOKIE,
+            upstream_script=script,
+            upstream_sha=sha,
+        )
+        catalog_file = destination / "catalog.json"
+        save_catalog(snapshot, catalog_file)
+        totals = snapshot["totals"]
+        status = "CATALOG_READY" if totals["selected_for_export"] > 0 else "CATALOG_EMPTY"
+        data = result(
+            status,
+            book_title=snapshot["book"]["title"],
+            catalog_file=str(catalog_file),
+            upstream_sha=sha,
+            **totals,
+            note="仅完成目录快照；还没有获取整本正文、图片或最终 PDF。",
+        )
+        return save_report(report_file, data)
+    except RuntimeError as exc:
+        status = "LOGIN_REQUIRED" if str(exc) == "LOGIN_REQUIRED" else "CATALOG_ERROR"
+        return save_report(report_file, result(
+            status, error_type="RuntimeError",
+            action="请检查本地目录报告和登录状态；没有开始全书采集。"
+        ))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return save_report(report_file, result(
+            "CATALOG_ERROR", error_type=type(exc).__name__,
+            action="请检查本地登录会话及上游章节目录格式；没有开始全书采集。"
+        ))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wereadlab", description="微信读书个人归档 Agent 工具（本地运行）")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -474,6 +520,10 @@ def main(argv: list[str] | None = None) -> int:
     install = sub.add_parser("upstream", help="下载或显式更新提取引擎")
     install.add_argument("--update", action="store_true")
     install.add_argument("--json", action="store_true")
+    cat = sub.add_parser("catalog", help="只获取目录和章节元数据，不下载整本正文")
+    cat.add_argument("url", help="从微信读书阅读页面复制的真实 URL")
+    cat.add_argument("--output-dir", help="只保存到本地私人目录")
+    cat.add_argument("--json", action="store_true")
     exp = sub.add_parser("export", help="试导出两章，或用 --full 处理整本可读章节")
     exp.add_argument("url", help="https://weread.qq.com/web/reader/... ")
     scope = exp.add_mutually_exclusive_group()
@@ -516,6 +566,11 @@ def main(argv: list[str] | None = None) -> int:
             data = result("UPSTREAM_READY", sha=git_commit(UPSTREAM))
         except RuntimeError as exc:
             data = result("UPSTREAM_ERROR", reason=str(exc))
+    elif args.command == "catalog":
+        try:
+            data = catalog_book(args)
+        except ValueError as exc:
+            data = result("INVALID_URL", reason=str(exc), action="复制微信读书真实阅读页面 URL")
     elif args.command == "export":
         if args.sample < 1 or args.sleep < 0 or args.skip < 0 or (args.expected_chapters is not None and args.expected_chapters < 1):
             parser.error("--sample 和 --expected-chapters 必须大于 0，--skip 和 --sleep 不得为负数")
@@ -592,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
         data = result("STATUS", jobs=[json.loads(p.read_text(encoding="utf-8")) for p in reports[-30:]])
     emit(data, as_json=args.json)
     good = {"READY", "UPSTREAM_READY", "SESSION_SAVED", "FILES_READY_COMPLETENESS_UNVERIFIED",
-            "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "IMAGES_REPAIRED", "STATUS"}
+            "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "IMAGES_REPAIRED", "CATALOG_READY", "STATUS"}
     return 0 if data["status"] in good else 2
 
 
