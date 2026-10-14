@@ -98,6 +98,22 @@ python wereadlab.py queue status --latest --json
 - 单本书 OS 文件锁防止并发 Worker；上次崩溃的 `RUNNING` 标为 `FAILED/INTERRUPTED`，供审查后重试；已有完成文件 SHA 不符会停止而非自动覆盖。
 - `--limit` 范围为 1–10，默认 1；每次最多运行指定章节数，遇到权限、登录、章节或图片错误就停。不启动整书合并/上传；`WORKER_PROGRESS` 或 `CHAPTERS_FETCHED_PENDING_FULL_QA` **不等于最终完整电子书**。
 
+## P2-C｜合并已验收的章节（不访问微信读书）
+
+所有目录中被选中的章节均已在 SQLite 标记 `COMPLETE`，并有通过 SHA256 的本地独立 EPUB 后，才能运行：
+
+```powershell
+cd D:\CodexData\weread-archive-agent
+python wereadlab.py queue status --latest --json
+python wereadlab.py book assemble --latest --format epub --format md --format pdf --json
+```
+
+- 若仍有待处理或失败章节，返回 `ASSEMBLY_NOT_READY`，不生成冒充完整的 EPUB。
+- 合并前逐章复核文件 SHA256、目录 UID/排序和 EPUB 基本结构；各章同名插图使用独立目录，防止覆盖。
+- CSS 里引用但未包含于原章包的装饰图资源会显式记录为 `CSS_DECORATION_UNAVAILABLE` 并在合并版用 `none` 降级，原始章 EPUB 保留。这意味着图文阅读能力可用，但部分视觉效果仍需原网页对照。
+- 生成 `.local/library/<reader-id>/final/book.epub`、`book.pdf`、`book/fulltext.md` 和 `book.report.json`。状态 `BOOK_FILES_READY_COMPLETENESS_UNVERIFIED` 仍须人工抽查首章、中间章、末章及图文顺序，**不等于 `FULL_BOOK_CONFIRMED`**。
+- 不会触发公开发布或自动 Drive 上传；后续单独执行私有传输与核验。
+
 ## 导出结果
 
 ```text
