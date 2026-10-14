@@ -238,6 +238,8 @@ def _resume_or_capture(
             raw, image_partial, cookie_file=cookie_file,
             max_images=max_images,
         )
+        if not image_partial.is_file():
+            raise ValueError("IMAGE_ASSETS_INCOMPLETE")
         source = image_partial
 
     ok, checked, code = _valid_chapter(
