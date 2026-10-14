@@ -24,7 +24,9 @@ Status date: 2026-10-13. Scope: personal-scale local automation; optional NAS an
 ## P2 — Resumable extraction and alternatives
 
 - [x] SQLite metadata worklist initialized from verified catalog; no data fetch on queue init.
-- [ ] Per-chapter checkpoint and persistent job queue (SQLite); interrupted jobs resume from failed chapter.
+- [x] Bounded one-chapter-per-run worker, independent EPUB checkpoints and SHA256 before COMPLETE; explicit retry of FAILED / INTERRUPTED.
+- [ ] Full-book chapter coverage and ordered EPUB assembly after all chapter results are checked.
+- [ ] Finish end-to-end resumable full-book release and catalog-to-spine QA; metadata queue alone is not sufficient.
 - [ ] Canvas-based fallback adapter selected only when technically applicable.
 - [ ] De-duplicate chapters and image assets, preserve stable reader and formal book IDs separately.
 - [ ] Limit concurrency to one book/session; backoff on errors and respect human challenges.
