@@ -7,6 +7,7 @@ recorded and omitted explicitly rather than leaving broken URLs silently.
 """
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import html
@@ -198,6 +199,11 @@ def _extract_chapter(item: dict, warnings: list[dict]) -> tuple[str, str, list[t
             ), xhtml
         )
         css_text = ""
+        if old_style is None and any(
+            "stylesheet" in tag.group(0).lower()
+            for tag in STYLE_LINK.finditer(xhtml)
+        ):
+            raise ValueError("SOURCE_STYLESHEET_MISSING")
         if old_style:
             css_text = z.read(old_style).decode("utf-8-sig")
             css_text = _rewrite_css(
@@ -284,7 +290,7 @@ def assemble_book(
         raise ValueError("ASSET_LIMIT_INVALID")
     if not db_path.is_file():
         raise FileNotFoundError("QUEUE_MISSING")
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection:
         statuses = dict(connection.execute(
             "SELECT state, count(*) FROM chapters GROUP BY state"
         ).fetchall())
