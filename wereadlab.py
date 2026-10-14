@@ -29,6 +29,7 @@ from tools.catalog_snapshot import fetch_catalog, save_catalog
 from tools.checkpoint_queue import init_queue, inspect_queue
 from tools.chapter_worker import run_chapter_worker
 from tools.book_assembly import assemble_book
+from tools.source_parity_audit import audit_live as audit_source_parity, parse_checks as parse_source_checks
 
 VERSION = "0.1.0"
 ROOT = Path(__file__).resolve().parent
@@ -553,6 +554,14 @@ def main(argv: list[str] | None = None) -> int:
     book_assemble.add_argument("--max-assets", type=int, default=4000)
     book_assemble.add_argument("--format", action="append", choices=["epub","pdf","md","txt"])
     book_assemble.add_argument("--json", action="store_true")
+    source_audit = sub.add_parser("source-audit", help="私有少量章节来源重读与归档正文对照")
+    source_audit.add_argument("--latest", action="store_true")
+    source_audit.add_argument("--book-dir", help="已有私有书籍目录；与 --latest 二选一")
+    source_audit.add_argument("--checks", default="19:txt,20:txt,21:txt",
+                              help="格式：19:txt,20:txt,21:txt；最多6章")
+    source_audit.add_argument("--live", action="store_true",
+                              help="明确允许向已授权书籍来源发起少量核验请求")
+    source_audit.add_argument("--json", action="store_true")
     exp = sub.add_parser("export", help="试导出两章，或用 --full 处理整本可读章节")
     exp.add_argument("url", help="https://weread.qq.com/web/reader/... ")
     scope = exp.add_mutually_exclusive_group()
@@ -595,6 +604,45 @@ def main(argv: list[str] | None = None) -> int:
             data = result("UPSTREAM_READY", sha=git_commit(UPSTREAM))
         except RuntimeError as exc:
             data = result("UPSTREAM_ERROR", reason=str(exc))
+    elif args.command == "source-audit":
+        if args.book_dir and args.latest:
+            parser.error("--book-dir 与 --latest 不能同时使用")
+        if not args.live:
+            data = result("SOURCE_AUDIT_REQUIRES_EXPLICIT_LIVE",
+                          action="只有明确执行 --live 才会访问微信读书章节来源")
+        else:
+            selected_dir = Path(args.book_dir).expanduser() if args.book_dir else None
+            if args.latest:
+                catalogs = list(LIBRARY.glob("*/catalog.json")) if LIBRARY.exists() else []
+                selected_dir = max(catalogs, key=lambda p: p.stat().st_mtime).parent if catalogs else None
+            if selected_dir is None:
+                data = result("CATALOG_NOT_FOUND", action="先运行 catalog 并使用 --latest")
+            elif not COOKIE.is_file():
+                data = result("LOGIN_REQUIRED", action="需要本机已授权的微信读书会话")
+            else:
+                try:
+                    checks = parse_source_checks(args.checks)
+                    script = ensure_upstream()
+                    report = audit_source_parity(
+                        book_dir=selected_dir,
+                        cookie_file=COOKIE,
+                        upstream_script=script,
+                        upstream_sha=git_commit(UPSTREAM),
+                        checks=checks
+                    )
+                    out = selected_dir / "final" / "source_parity_audit.json"
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+                    data = result(**report, report_file=str(out))
+                except (ValueError, RuntimeError, OSError, KeyError, TypeError, zipfile.BadZipFile) as exc:
+                    code = str(exc) if str(exc) in {
+                        "LOGIN_REQUIRED", "PINNED_SOURCE_SHA_OR_CATALOG_MISMATCH",
+                        "INCOMPLETE_QUEUE", "FORMAL_BOOK_ID_CHANGED",
+                        "CHAPTER_CATALOG_DRIFT", "ARTIFACT_SHA_MISMATCH",
+                        "CATALOG_OR_QUEUE_MISSING"
+                    } else type(exc).__name__
+                    data = result("SOURCE_AUDIT_BLOCKED", reason_code=code,
+                                  action="检查登录状态、上游SHA与已完成章节; 不会将未验证结果标记通过")
     elif args.command == "book":
         if args.db and args.latest:
             parser.error("--db 与 --latest 不可同时使用")
@@ -797,7 +845,8 @@ def main(argv: list[str] | None = None) -> int:
             "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED", "IMAGES_REPAIRED", "CATALOG_READY",
             "QUEUE_READY", "WORKER_PROGRESS", "WORKER_IDLE",
             "CHAPTERS_FETCHED_PENDING_FULL_QA",
-            "BOOK_FILES_READY_COMPLETENESS_UNVERIFIED", "STATUS"}
+            "BOOK_FILES_READY_COMPLETENESS_UNVERIFIED",
+            "SOURCE_PARITY_EXACT_FOR_CHECKED_CHAPTERS", "STATUS"}
     return 0 if data["status"] in good else 2
 
 
