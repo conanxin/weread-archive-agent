@@ -194,8 +194,8 @@ class WorkerTests(unittest.TestCase):
                              "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED")
             self.assertGreater(app.inspect_epub(book/"chapters/0001.epub")["text_characters"],1000)
             self.assertEqual(second["complete"],1)
-            third=run(provider, cat, db, cookie, limit=1)
-            self.assertEqual(third["completed_now"],1, {"result":third,"modes":provider.modes,"raw":app.inspect_epub(book/"chapters/0002.partial.epub") if (book/"chapters/0002.partial.epub").exists() else None,"image":app.inspect_epub(book/"chapters/0002.images.partial.epub") if (book/"chapters/0002.images.partial.epub").exists() else None}) # second
+            third=run(provider, cat, db, cookie, limit=1, repairer=repair)
+            self.assertEqual(third["completed_now"],1) # process the second chapter
             self.assertEqual(third["txt_fallback_ordinals"],[2])
             self.assertEqual(provider.modes,["auto","txt","txt","auto","txt"])
 
