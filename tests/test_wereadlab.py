@@ -76,6 +76,35 @@ class ValidationTests(unittest.TestCase):
             self.assertTrue((root / 'md/images/0001.jpg').exists())
             self.assertTrue(Path(converted['txt']).exists())
 
+    def test_markdown_ignores_xhtml_head_and_scripts(self):
+        html = (
+            '<html><head><title>页面内部标题</title>'
+            '<style>.a{color:red;}秘密样式文字</style>'
+            '</head><body><h1>正文章节</h1>'
+            '<p>第一段文字。</p><script>秘密脚本代码</script>'
+            '<p>最后一段。</p></body></html>'
+        )
+        writer = app.MarkdownWriter("OEBPS/text/chapter.xhtml", set(), {})
+        writer.feed(html)
+        rendered = "".join(writer.parts)
+        self.assertIn("正文章节", rendered)
+        self.assertIn("第一段文字。", rendered)
+        self.assertIn("最后一段。", rendered)
+        self.assertNotIn("页面内部标题", rendered)
+        self.assertNotIn("秘密样式文字", rendered)
+        self.assertNotIn("秘密脚本代码", rendered)
+
+    def test_markdown_body_only_with_realistic_duplicate_title(self):
+        html = (
+            '<html><head><meta charset="utf-8"/><title>版权信息</title></head>'
+            '<body><h1>版权信息</h1><p>合成版权信息。</p></body></html>'
+        )
+        writer = app.MarkdownWriter("OEBPS/text/chapter.xhtml", set(), {})
+        writer.feed(html)
+        rendered = "".join(writer.parts)
+        self.assertEqual(rendered.count("版权信息"), 2)
+        self.assertEqual(rendered.count("合成版权信息。"), 1)
+
     def test_inspect_cli_is_offline_and_machine_readable(self):
         with tempfile.TemporaryDirectory() as tmp:
             book = Path(tmp) / 'demo.epub'
