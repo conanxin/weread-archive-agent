@@ -17,7 +17,9 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
+import posixpath
 import sqlite3
+import xml.etree.ElementTree as ET
 import sys
 import unicodedata
 import zipfile
@@ -116,12 +118,33 @@ def _chapter_xhtml(epub: Path) -> str:
     with zipfile.ZipFile(epub) as z:
         if z.testzip() is not None:
             raise ValueError("EPUB_ZIP_CRC_FAIL")
-        # Our chapter writer stores one source body in one text/chapter_0001.xhtml
-        paths = [p for p in z.namelist()
-                 if p.startswith("OEBPS/text/") and p.endswith(".xhtml")]
-        if len(paths) != 1:
+        container = ET.fromstring(z.read("META-INF/container.xml"))
+        rootfile = next(
+            (el.attrib["full-path"] for el in container.iter()
+             if el.tag.rsplit("}", 1)[-1] == "rootfile"),
+            None,
+        )
+        if not rootfile:
+            raise ValueError("EPUB_ROOTFILE_NOT_FOUND")
+        package = ET.fromstring(z.read(rootfile))
+        manifest = {
+            el.attrib["id"]: el.attrib["href"]
+            for el in package.iter()
+            if el.tag.rsplit("}", 1)[-1] == "item"
+            and "id" in el.attrib and "href" in el.attrib
+        }
+        spine = [
+            el.attrib["idref"] for el in package.iter()
+            if el.tag.rsplit("}", 1)[-1] == "itemref"
+        ]
+        if len(spine) != 1 or spine[0] not in manifest:
             raise ValueError("EXPECTED_SINGLE_CHAPTER")
-        return z.read(paths[0]).decode("utf-8-sig", errors="strict")
+        path = posixpath.normpath(
+            posixpath.join(posixpath.dirname(rootfile), manifest[spine[0]])
+        )
+        if not path.lower().endswith(".xhtml"):
+            raise ValueError("UNEXPECTED_CHAPTER_DOCUMENT_TYPE")
+        return z.read(path).decode("utf-8-sig", errors="strict")
 
 
 def parse_checks(value: str, *, maximum: int = 6) -> list[tuple[int, str]]:
