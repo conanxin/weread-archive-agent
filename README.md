@@ -80,6 +80,24 @@ python wereadlab.py queue status --latest --json
 
 队列保存在该书的私有 `.local/library/<reader-id>/chapters.sqlite`，记录章节 UID、目录次序、提供方字数、PENDING / RUNNING / FAILED / COMPLETE、尝试次数和后续文件校验字段。重复初始化不会重置已有章节状态；目录章 ID / 次序改变则停止并请求显式校准。**此阶段只实现建队和状态查询；还没有章节执行 worker，也不能将 `QUEUE_READY` 视为整书下载完成。**
 
+## P2-B2｜逐章提取与断点恢复（小批次）
+
+```powershell
+cd D:\CodexData\weread-archive-agent
+python wereadlab.py queue status --latest --json
+# 默认只处理一章：需要已有 catalog.json 与 chapters.sqlite
+python wereadlab.py queue run --latest --limit 1 --json
+# 只有确有 FAILED/INTERRUPTED 且已调查原因时，才显式允许重试：
+# python wereadlab.py queue run --latest --limit 1 --retry-failed --json
+python wereadlab.py queue status --latest --json
+```
+
+- 从本地保存的真实阅读器 ID 与正式 bookId 获取章节，启动时重新对照已冻结目录；目录顺序或上游 SHA 变化会停止执行。
+- 每一章先生成 `chapters/0001.partial.epub`，修复其图片和注释，再生成 `chapters/0001.epub`；通过结构与基本截断门禁后写入文件 SHA-256，SQLite 状态才更新为 `COMPLETE`。
+- 若图像修复失败，正文半成品仍保留。显式 `--retry-failed` 后，优先在本地修复图片，**不会重新下载已保存的章节正文**。
+- 单本书 OS 文件锁防止并发 Worker；上次崩溃的 `RUNNING` 标为 `FAILED/INTERRUPTED`，供审查后重试；已有完成文件 SHA 不符会停止而非自动覆盖。
+- `--limit` 范围为 1–10，默认 1；每次最多运行指定章节数，遇到权限、登录、章节或图片错误就停。不启动整书合并/上传；`WORKER_PROGRESS` 或 `CHAPTERS_FETCHED_PENDING_FULL_QA` **不等于最终完整电子书**。
+
 ## 导出结果
 
 ```text
