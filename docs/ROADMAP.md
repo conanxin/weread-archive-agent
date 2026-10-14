@@ -1,6 +1,6 @@
 # Roadmap — WeRead Archive Agent
 
-Status date: 2026-10-13. Scope: personal-scale local automation; optional NAS and BOOK-ID-SEARCH integration.
+Status date: 2026-10-14 (P2-D2 retrospective). Scope: personal-scale local automation; optional NAS and BOOK-ID-SEARCH integration.
 
 ## P0 — Runnable scaffold (this release)
 
@@ -10,13 +10,13 @@ Status date: 2026-10-13. Scope: personal-scale local automation; optional NAS an
 - [x] Built-in EPUB structural inspection and Markdown/TXT extraction, optional Calibre PDF.
 - [x] Idempotent re-use of verified EPUB; source SHA and JSON receipts.
 - [x] Offline unit tests with synthetic books and CI.
-- [ ] Live account / 2-chapter export acceptance test (needs interactive QR login and readable book).
+- [x] Real authorized two-chapter EPUB/PDF/Markdown + illustration repair acceptance, private sample QA.
 
 ## P1 — Reliability first
 
 - [x] Implement CLI for local catalog snapshot (metadata-only); require real-book run before marking catalog count verified.
-- [ ] Capture real catalog count, chapter IDs and per-chapter word counts before extraction.
-- [ ] Chapter-level SHA and evidence; distinguish visual completeness from mere structural completeness.
+- [x] Real catalog count and chapter IDs captured: 23 entries, 22 eligible; persisted frozen chapter-order snapshot.
+- [x] Chapter-level file SHA and source-to-assembled length checks, with separate structural/visual fidelity gates.
 - [ ] Error taxonomies: login expiration, App-only, payment/access, throttling, parser breakage, image omissions.
 - [ ] Offline snapshot of select non-private DOM/fixture patterns; test compatibility against revisions.
 - [ ] Real EPUB/PDF image layout quality; RTL/vertical writing and footnote checks.
@@ -25,7 +25,7 @@ Status date: 2026-10-13. Scope: personal-scale local automation; optional NAS an
 
 - [x] SQLite metadata worklist initialized from verified catalog; no data fetch on queue init.
 - [x] Bounded one-chapter-per-run worker, independent EPUB checkpoints and SHA256 before COMPLETE; explicit retry of FAILED / INTERRUPTED.
-- [ ] Full-book chapter coverage and ordered EPUB assembly after all chapter results are checked.
+- [x] Real book: 22/22 chapter coverage, ordered EPUB assembly with complete SHA and spine checks.
 - [ ] Finish end-to-end resumable full-book release and catalog-to-spine QA; metadata queue alone is not sufficient.
 - [ ] Canvas-based fallback adapter selected only when technically applicable.
 - [ ] De-duplicate chapters and image assets, preserve stable reader and formal book IDs separately.
@@ -35,7 +35,9 @@ Status date: 2026-10-13. Scope: personal-scale local automation; optional NAS an
 
 - [x] Strict local-only book assembly checks eligible catalog entries, ordered queue, 22/22-or-block, verified per-chapter SHA256 and EPUB structure.
 - [x] Unique image asset namespaces per chapter, per-chapter CSS, complete EPUB nav/spine, optional Markdown/PDF conversion.
-- [ ] Real-book full assembly gate, CSS decoration degradation audit, visual review of first/middle/last, and final private Drive release.
+- [x] Real-book EPUB/PDF/Markdown/TXT produced; 275-page PDF machine QA and representative nine-page visual audit; six owner-only Drive uploads verified by connector.
+- [x] CSS 19 duplicate warnings de-duplicated to one missing background asset under an unused simple class in static XHTML; reusable offline CSS audit added.
+- [ ] Source-reader side-by-side final fidelity review for TXT fallback chapters, footnotes/captions and optional CSS styles; requires user acceptance.
 
 ## P3 — More automation, less friction
 
@@ -45,6 +47,8 @@ Status date: 2026-10-13. Scope: personal-scale local automation; optional NAS an
 - [ ] Optional BOOK-ID-SEARCH link via metadata only; no unreviewed mutation of existing introductions.
 
 ## P4 — Research and open-source maintenance
+
+- [x] Postmortem and status gates documented in docs/LESSONS_LEARNED_2026-10-14.md; CSS image warning semantics audited offline.
 
 - [ ] UI regressions and anonymized reproducible bug templates.
 - [x] Weekly public upstream commit check creates de-duplicated review issues, no automatic untested merges.

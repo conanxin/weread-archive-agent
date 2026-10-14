@@ -122,6 +122,20 @@ python wereadlab.py book assemble --latest --format epub --format md --format pd
 - 生成 `.local/library/<reader-id>/final/book.epub`、`book.pdf`、`book/fulltext.md` 和 `book.report.json`。状态 `BOOK_FILES_READY_COMPLETENESS_UNVERIFIED` 仍须人工抽查首章、中间章、末章及图文顺序，**不等于 `FULL_BOOK_CONFIRMED`**。
 - 不会触发公开发布或自动 Drive 上传；后续单独执行私有传输与核验。
 
+## P2-D2｜样式与整书保真审计（只读）
+
+一次真实 22 章整书测试发现：合并器提示 19 项 CSS 装饰资源缺失。进一步去重后，它们实际是 **一个背景 PNG 在 19 章中被重复引用**；对应简单 CSS 类在这 19 个章节的静态 XHTML 中从未出现。这是低预期影响的未使用样式引用，不代表 19 张正文图片损失，也不等于原书网页排版已经逐页验证。
+
+可复用的纯本地检查工具：
+
+```powershell
+python tools/fidelity_audit.py --book-dir '.local/library/实际书籍目录' --output '.local/css-fidelity-report.json'
+```
+
+审计结果只输出资源/选择器的摘要哈希、重复次数、CSS 属性名、选择器使用状态和章节序号，不输出正文、图片 URL 或 Cookie。`UNUSED_SIMPLE_CLASS` 与 `USED_SIMPLE_CLASS`、`UNKNOWN_OR_COMPLEX_SELECTOR` 必须分开处理；后两类不能直接按装饰资源忽略。
+
+完整的真实故障、根因与复用规则见 [P2-D2 经验复盘](docs/LESSONS_LEARNED_2026-10-14.md)。目前全书文件可以私有阅读，但只达到 `BOOK_FILES_READY_COMPLETENESS_UNVERIFIED`，最终与源阅读页逐字/逐图对照仍待确认。
+
 ## 导出结果
 
 ```text
@@ -145,7 +159,7 @@ python wereadlab.py book assemble --latest --format epub --format md --format pd
 
 ## 自动化约束
 
-通过 `AGENTS.md` 描述 Hermes、OpenClaw 的 JSON CLI 调用方式。Agent 可自动检测依赖、排队、调用已保存本地会话、转格式、检查、同步 NAS；碰到 `LOGIN_REQUIRED`、`WEB_UNAVAILABLE`、`ACCESS_RESTRICTED` 或 `MANUAL_VERIFICATION_REQUIRED` 时应停止并通知用户，不尝试自动规避验证或扩大权限。
+通过 `AGENTS.md` 描述 Hermes、OpenClaw 的 JSON CLI 调用方式。Agent 可自动检测依赖、排队、调用已保存本地会话、转格式和检查；NAS 同步仍是后续功能；碰到 `LOGIN_REQUIRED`、`WEB_UNAVAILABLE`、`ACCESS_RESTRICTED` 或 `MANUAL_VERIFICATION_REQUIRED` 时应停止并通知用户，不尝试自动规避验证或扩大权限。
 
 ## 开发
 
@@ -154,7 +168,7 @@ python -m unittest discover -s tests -v
 python wereadlab.py doctor --json
 ```
 
-测试只使用**合成 EPUB**，不调用微信读书，不需要账号或网络。持续更新计划见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，研究依据见 [`docs/RESEARCH_LOG.md`](docs/RESEARCH_LOG.md)。
+测试只使用**合成 EPUB**，不调用微信读书，不需要账号或网络。持续更新计划见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，研究依据见 [`docs/RESEARCH_LOG.md`](docs/RESEARCH_LOG.md)，经验教训与验收门禁见 [`docs/LESSONS_LEARNED_2026-10-14.md`](docs/LESSONS_LEARNED_2026-10-14.md)。
 
 ### 软件边界
 
