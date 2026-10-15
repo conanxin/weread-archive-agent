@@ -98,7 +98,7 @@ class VersionedBuildTests(unittest.TestCase):
                 for filename in old.namelist():
                     if filename!="OEBPS/text/chapter_0001.xhtml":
                         self.assertEqual(old.read(filename),versioned.read(filename))
-                self.assertIn(b"<h1>\\xe7\\xac\\xac\\xe4\\xb8\\x80\\xe7\\xab\\xa0</h1>",
+                self.assertIn("<h1>第一章</h1>".encode("utf-8"),
                     versioned.read("OEBPS/text/chapter_0001.xhtml"))
             self.assertTrue((folder/"final/v2-headings/headings_qa.json").exists())
             with self.assertRaisesRegex(FileExistsError,"VERSIONED_OUTPUT_ALREADY_EXISTS"):
