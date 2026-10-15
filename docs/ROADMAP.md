@@ -38,8 +38,10 @@ Status date: 2026-10-14 (P2-D2 retrospective). Scope: personal-scale local autom
 - [x] Real-book EPUB/PDF/Markdown/TXT produced; 275-page PDF machine QA and representative nine-page visual audit; six owner-only Drive uploads verified by connector.
 - [x] CSS 19 duplicate warnings de-duplicated to one missing background asset under an unused simple class in static XHTML; reusable offline CSS audit added.
 - [x] P2-D3 bounded source-to-artifact normalized text comparison module and offline tests, with no source text in reports.
-- [ ] Execute and interpret the audit against real TXT fallback chapters and representative illustrated chapters.
-- [ ] Source-reader side-by-side final fidelity review for TXT fallback chapters, footnotes/captions and optional CSS styles; requires user acceptance.
+- [x] P2-D3 real source text audit: ordinals 19–21 TXT and 5/18 EPUB, 5/5 exact after documented normalization; same-upstream only.
+- [x] P2-D4 provenance-gated title dedup: precisely 12 synthesized H1 removed into a separate candidate; 263-page PDF, 174/174 Markdown images and 166 PDF image objects. Original still unchanged.
+- [ ] P2-D4 source-reader side-by-side final fidelity review for heading pages, TXT fallback chapters, footnotes/captions and optional CSS styles; requires user acceptance.
+- [ ] Verify optional private v2 candidate upload only after local QA and human sign-off.
 
 ## P3 — More automation, less friction
 
