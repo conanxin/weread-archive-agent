@@ -150,6 +150,23 @@ python wereadlab.py source-audit --latest --checks "19:txt,20:txt,21:txt" --live
 - 比较标准为 NFC Unicode、去空白、去导出器自动加的第一个章节标题，以及将可见注释标记和原始 alt 文本对齐。**标点和字词差异不能忽略**。
 - `SOURCE_PARITY_EXACT_FOR_CHECKED_CHAPTERS` 仅说明指定章节的文本与同一服务重新获取的文本一致；不等于出版社母版校勘、图片/脚注保真，也不等于全书终验完成。
 
+## P2-D4｜重复章节标题来源审计与独立候选版
+
+上游 EPUB 生成器会在正文前添加无样式的 `<h1>章节标题</h1>`。若原始章节正文恰好也以同名 H1 开始，可能出现重复标题及独立空白标题页。此问题**不能**通过不分来源地删除所有重复 H1 解决。
+
+```powershell
+cd D:\CodexData\weread-archive-agent
+# 只读审计（默认）；将路径替换为本机书籍私有目录
+python -m tools.heading_fidelity --book-dir ".local/library/<reader-id>"
+
+# 只有完成审计后才显式创建独立版本（原书不覆盖）
+python -m tools.heading_fidelity --book-dir ".local/library/<reader-id>" --build-versioned
+```
+
+工具要求原始 EPUB 哈希与 QA 报告完全一致、所有目录章节独立文件 SHA 校验通过；仅删除已识别的上游**合成** H1，并原封不动保留来源正文、图片和其他章节。生成 `final/v2-headings/book.epub`，后续需要单独转换 PDF、完成视觉抽查和私有交付。真实样本 12 项匹配，Linux/Windows/实机各 54 项合成测试通过；详见 [P2-D4 实测报告](docs/P2D4_HEADING_FIDELITY_2026-10-15.md)。
+
+**状态边界**：`P2D4_CANDIDATE_QA_PASS` 是候选版的机器质量门禁，并非已经逐页核对源阅读器，也不是自动发布或 `FULL_BOOK_CONFIRMED`。
+
 ## 导出结果
 
 ```text
