@@ -20,6 +20,10 @@ python -m tools.cached_source_parity --book-dir ".local/library/<reader-id>" --c
 4. **被实际引用的图片**：比较引用次数、alt 描述和逐个图像的原始字节 SHA-256。组装器改名不会造成误判。
 5. **整个图片资源包**：根据来源与最终 EPUB 的 OPF image/* manifest 计算 SHA-256 多重集合，保留所有重复图片的出现次数。
 
+## 版本化标题规则与 P3-I v4
+
+旧版本维持默认 heading_policy=v3 的生成标题识别口径。对于经过原阅读器验证的 v4-secondTitle 结构，显式增加 --heading-policy v4 才会将来源可证明的普通 H1 + 原始 secondTitle H2 归为合成标题；标题和来源类名必须完全符合严格判据。不要让未来的规则升级自动改变已验收 v2/v3 的比较语义。
+
 ## 输出状态
 
 - **P3H_CACHED_SOURCE_PARITY_PASS**：上述离线门禁全部通过。

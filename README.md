@@ -196,6 +196,12 @@ python -m tools.cached_source_parity --book-dir ".local/library/<reader-id>" --c
 
 状态为 `P3H_CACHED_SOURCE_PARITY_PASS` 或 `P3H_CACHED_SOURCE_PARITY_INCOMPLETE`（非零退出），JSON 不输出私人书籍正文与哈希。仅使用本地冻结缓存，不登录微信读书，不进行在线抓取或云盘上传。它**不是**出版社母版校勘或真人阅读器视觉终审。具体门禁和合成失败案例见 [P3-H 缓存来源保真说明](docs/P3H_CACHED_SOURCE_PARITY.md)，版权页合成标题修复见 [P3-F 视觉规则](docs/P3F_VISUAL_REVIEW_GATE.md)。
 
+## P3-I｜原阅读器视觉抽查与严格 v4 标题修复
+
+在线阅读器的 66 个目录与整书 PDF 66 条书签一一匹配。针对来源 XHTML 中 47 处“上游合成普通 H1 + 原始 secondTitle H2”的遗漏，本项目现在可在独立的 v4-headings 版本中，精确删除已证实的合成 H1；原版、v2 和 v3 均保留。
+
+先运行只读审计，随后明确构建候选版，再用 --heading-policy v4 的缓存来源校验门禁核对 66 章文字、图片字节、资源完整性。统一 A4 PDF 规格，避免把排版页数变化误认为正文丢失。详细方法见 [P3-I 来源阅读器视觉门禁](docs/P3I_SOURCE_READER_VISUAL_FIDELITY.md)。**注释弹窗与阅读者最终签收依然待完成；不自动标记 FULL_BOOK_CONFIRMED。**
+
 ## 导出结果
 
 ```text

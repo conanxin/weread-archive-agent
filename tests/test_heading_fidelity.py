@@ -59,6 +59,37 @@ class HeadingTransformTests(unittest.TestCase):
                 self.assertEqual(dedupe_one_chapter(source,catalog_title="合成版权页"),
                                  (source,False))
 
+    def test_second_title_h2_is_proven_only_in_v4(self):
+        source=(
+            '<html><body>\n<h1>第二节</h1>\n'
+            '<h2 class="secondTitle" id="heading_id_2">第二节</h2>'
+            '<p>保留原文与注释。</p></body></html>'
+        )
+        self.assertEqual(dedupe_one_chapter(source,catalog_title="第二节"),
+                         (source,False))
+        fixed,changed=dedupe_one_chapter(
+            source,catalog_title="第二节",include_source_h2=True
+        )
+        self.assertTrue(changed)
+        self.assertEqual(fixed,source.replace("<h1>第二节</h1>","",1))
+        self.assertIn('<h2 class="secondTitle" id="heading_id_2">第二节</h2>',fixed)
+        self.assertIn("保留原文与注释",fixed)
+
+    def test_untrusted_h2_or_different_catalog_stays_unchanged(self):
+        variations=[
+            '<h2 class="anotherTitle" id="bw1">第二节</h2>',
+            '<h2 class="secondTitle">第二节</h2>',
+            '<h2 class="secondTitle" id="bw1">第三节</h2>',
+            '<p>有内容隔断</p><h2 class="secondTitle" id="bw1">第二节</h2>',
+        ]
+        for text in variations:
+            source='<body><h1>第二节</h1>'+text+'</body>'
+            with self.subTest(shape=text[:30]):
+                self.assertEqual(
+                    dedupe_one_chapter(source,catalog_title="第二节",include_source_h2=True),
+                    (source,False)
+                )
+
     def test_difference_or_intervening_content_is_not_removed(self):
         variants=[
             '<body><h1>第一节</h1><p>有字</p><h1>第一节</h1></body>',
