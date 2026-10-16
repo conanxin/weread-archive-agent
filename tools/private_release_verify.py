@@ -42,10 +42,11 @@ def verify_release(manifest: dict, observed: dict) -> dict:
     rows=[]
     for source in expected:
         name=source["name"]
-        local=(root/name).resolve()
+        unresolved=root/name
+        local=unresolved.resolve()
         hits=seen.get(name,[])
         matched=hits[0] if len(hits)==1 else None
-        if not local.is_relative_to(root) or not local.is_file():
+        if unresolved.is_symlink() or not local.is_relative_to(root) or not local.is_file():
             status="LOCAL_FILE_MISSING"
         elif hash_file(local)!=source.get("sha256") or local.stat().st_size!=source.get("bytes"):
             status="LOCAL_FILE_CHANGED"
@@ -55,7 +56,7 @@ def verify_release(manifest: dict, observed: dict) -> dict:
             status="CLOUD_ID_UNRESOLVED"
         elif matched["id"] in used_ids:
             status="CLOUD_ID_DUPLICATED"
-        elif matched.get("bytes")!=source["bytes"]:
+        elif str(matched.get("bytes"))!=str(source["bytes"]):
             status="CLOUD_BYTE_COUNT_MISMATCH"
         elif folder_id not in (matched.get("parent_ids") or []):
             status="WRONG_CLOUD_PARENT"
