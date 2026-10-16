@@ -105,9 +105,11 @@ def read_body(markup: str) -> BodyReader:
 
 
 def verify_cached_source(
-    book_dir: Path, compiled_epub: Path, *, inspector=None
+    book_dir: Path, compiled_epub: Path, *, inspector=None, heading_policy: str = "v3"
 ) -> dict:
     """Fail closed, return aggregate evidence and issue codes, no original prose."""
+    if heading_policy not in {"v3", "v4"}:
+        raise ValueError("UNKNOWN_HEADING_POLICY")
     if inspector is None:
         from wereadlab import inspect_epub
         inspector = inspect_epub
@@ -165,7 +167,8 @@ def verify_cached_source(
                 ))
                 src_data = source.read(src_name).decode("utf-8-sig")
                 expected_data, changed = dedupe_one_chapter(
-                    src_data, catalog_title=row["chapter_title"]
+                    src_data, catalog_title=row["chapter_title"],
+                    include_source_h2=(heading_policy == "v4")
                 )
                 deduped += int(changed)
                 dest_data = book.read(chapter_name).decode("utf-8-sig")
@@ -201,6 +204,7 @@ def verify_cached_source(
     counts = Counter(x["kind"] for x in issues)
     return {
         "status": PASS if not issues else INCOMPLETE,
+        "heading_policy": heading_policy,
         "chapters_expected": len(chapters),
         "chapters_text_exact": compared,
         "normalized_body_characters_matched": body_count,
@@ -223,10 +227,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Offline cached source EPUB parity checker")
     parser.add_argument("--book-dir", type=Path, required=True)
     parser.add_argument("--compiled", type=Path, required=True)
+    parser.add_argument("--heading-policy", choices=["v3", "v4"], default="v3",
+                        help="v4 also removes source-proven exporter H1 before genuine H2")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
-        receipt = verify_cached_source(args.book_dir, args.compiled)
+        receipt = verify_cached_source(args.book_dir, args.compiled,
+                                       heading_policy=args.heading_policy)
     except (OSError, ValueError, KeyError, IndexError) as exc:
         receipt = {
             "status": INCOMPLETE,

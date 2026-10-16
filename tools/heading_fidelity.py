@@ -39,6 +39,14 @@ COPYRIGHT_PAIR = re.compile(
     r'<h1 class="newCopyRightTitle">[^<]*</h1>\s*</div>)',
     re.I | re.S,
 )
+# P3-I: source reader section headings can be genuine <h2 class="secondTitle">.
+# The pinned exporter adds a plain H1 immediately before this source element.
+# Only enable this strictly attributed pattern for the independent v4 candidate.
+SECOND_TITLE_PAIR = re.compile(
+    r'(<body\b[^>]*>\s*)(?P<generated><h1>[^<]*</h1>)(?P<gap>\s*)'
+    r'(?P<original><h2 class="secondTitle" id="[^"]+">[^<]*</h2>)',
+    re.I | re.S,
+)
 HEADING_TEXT = re.compile(r"<[^>]*>", re.S)
 
 
@@ -46,8 +54,11 @@ def _heading_text(markup: str) -> str:
     return "".join(html.unescape(HEADING_TEXT.sub("", markup)).split())
 
 
-def dedupe_one_chapter(xhtml: str, *, catalog_title: str) -> tuple[str, bool]:
+def dedupe_one_chapter(xhtml: str, *, catalog_title: str,
+                       include_source_h2: bool = False) -> tuple[str, bool]:
     match = LEADING_PAIR.search(xhtml) or COPYRIGHT_PAIR.search(xhtml)
+    if match is None and include_source_h2:
+        match = SECOND_TITLE_PAIR.search(xhtml)
     if not match:
         return xhtml, False
     generated = _heading_text(match.group("generated"))
@@ -98,7 +109,7 @@ def audit_and_build(
     original_sha, expected, old_check = _source_qa(book_dir, source, inspector)
     if len(entries) != expected:
         raise ValueError("CHAPTER_COVERAGE_MISMATCH")
-    if target_version not in {"v2-headings", "v3-headings"}:
+    if target_version not in {"v2-headings", "v3-headings", "v4-headings"}:
         raise ValueError("UNKNOWN_VERSIONED_OUTPUT")
     new_epub = book_dir / "final" / target_version / "book.epub"
     changed_ordinals: list[int] = []
@@ -114,7 +125,8 @@ def audit_and_build(
                 raise ValueError("SOURCE_CHAPTER_PATH_MISSING")
             xhtml = z.read(chapter_path).decode("utf-8-sig")
             new, changed = dedupe_one_chapter(
-                xhtml, catalog_title=row["chapter_title"]
+                xhtml, catalog_title=row["chapter_title"],
+                include_source_h2=(target_version == "v4-headings"),
             )
             if changed:
                 changed_ordinals.append(n)
@@ -129,8 +141,8 @@ def audit_and_build(
         "deduplicated_ordinals": changed_ordinals,
         "criterion": (
             "At the start of body, a generated plain <h1>catalog title</h1> "
-            "precedes an identical source H1 directly or within the exact "
-            "copyright wrapper; text matches the frozen catalog title."
+            "precedes an identical source title (H1, wrapped copyright H1, or "
+            "v4-only attributed secondTitle H2); matches frozen catalog."
         ),
         "original_unchanged": True,
         "note": (
@@ -190,7 +202,7 @@ def main():
     parser.add_argument("--book-dir", type=Path, required=True)
     parser.add_argument("--build-versioned", action="store_true",
                         help="Write a versioned EPUB while preserving the original")
-    parser.add_argument("--output-version", choices=["v2-headings", "v3-headings"],
+    parser.add_argument("--output-version", choices=["v2-headings", "v3-headings", "v4-headings"],
                         default="v2-headings")
     args = parser.parse_args()
     import wereadlab
