@@ -2,7 +2,7 @@
 
 面向个人学习、检索与归档的 **微信读书本地电子书导出工作流**。把现有开源的章节提取实现封装为稳定的 CLI，供 Windows 双击运行，也可由 Hermes / OpenClaw 调用。这个仓库开源的是**任务编排、格式转换、校验和 Agent 接口**；不会提交微信登录凭证、个人书库内容或提取引擎的第三方源码。
 
-> 当前版本 **v0.1.0（P0 可运行原型）**，尚未在维护者的真实微信读书账号上完成整书验收。状态 `FILES_READY_COMPLETENESS_UNVERIFIED` 仅证明输出文件通过结构检查，**不证明正文没有缺页或漏章**。
+> 当前 CLI 编号仍为 **v0.1.0**。个人授权环境已完成两部不同 EPUB 书籍的整书结构/机器 QA（共 22 章和 66 章），并有分布式章节文字来源抽查与私人云盘读回证据；**出版社底本、图文版式与全书逐页的人为终审仍未通过，不宣称 `FULL_BOOK_CONFIRMED`**。正式发布版本编号需另行评审。
 
 ## 为什么采用这个结构
 
@@ -166,6 +166,25 @@ python -m tools.heading_fidelity --book-dir ".local/library/<reader-id>" --build
 工具要求原始 EPUB 哈希与 QA 报告完全一致、所有目录章节独立文件 SHA 校验通过；仅删除已识别的上游**合成** H1，并原封不动保留来源正文、图片和其他章节。生成 `final/v2-headings/book.epub`，后续需要单独转换 PDF、完成视觉抽查和私有交付。真实样本 12 项匹配，Linux/Windows/实机各 54 项合成测试通过；详见 [P2-D4 实测报告](docs/P2D4_HEADING_FIDELITY_2026-10-15.md)。
 
 **状态边界**：`P2D4_CANDIDATE_QA_PASS` 是候选版的机器质量门禁，并非已经逐页核对源阅读器，也不是自动发布或 `FULL_BOOK_CONFIRMED`。
+
+## P3-E｜云盘私有交付的双重证明
+
+完成本地 EPUB/PDF 质量报告后，**云端上传完成提示不能充当交付回执**。本项目新增纯离线工具，用已选择的文件生成 SHA256 清单，并在连接器提供实际云端元数据及下载文件 SHA256 后校验：云端真实 ID、大小、文件夹父目录、`shared=false` 和 owner-only 权限。
+
+```powershell
+# 示例为合成文件与占位符；清单及读取结果必须保存到 .local 私有路径
+python -m tools.private_release_manifest --directory ".local/staged" `
+  --files "book.epub" "book.pdf" `
+  --target-folder-id "<private-folder-id>" `
+  --output ".local/release-manifest.json"
+
+python -m tools.private_release_verify `
+  --manifest ".local/release-manifest.json" `
+  --observed ".local/drive-observations.json" `
+  --output ".local/release-receipt.json"
+```
+
+成功状态为 `PRIVATE_DELIVERY_PASS`；如存在同名多份、传错目录、权限异常、云端缺 SHA 或不一致，一律返回 `PRIVATE_DELIVERY_INCOMPLETE` 并提供机器可读失败原因。**此功能不执行上传/移动，也不读取 Google Cookie**。详细见 [P3-E 私人交付门禁](docs/P3E_PRIVATE_DELIVERY_GATE.md)。
 
 ## 导出结果
 

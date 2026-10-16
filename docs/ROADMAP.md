@@ -59,6 +59,13 @@ Status date: 2026-10-14 (P2-D2 retrospective). Scope: personal-scale local autom
 - [ ] Clear compatibility matrix: EPUB-format, TXT-format, canvas, illustrated, browser restricted.
 - [ ] Contributor docs, changelog, tagged releases, portable binaries.
 
+## P3-E — Reliable private delivery evidence
+
+- [x] Cross-book real proof: two authorized books (22 and 66 eligible chapters) completed local machine QA; second private Drive release 7/7 downloaded bytes and file hashes verified.
+- [x] Offline allowlisted release manifest builder and fail-closed cloud-readback verifier with synthetic regression tests on wrong folder, duplicate names, missing SHA, bytes mismatch and ACL drift.
+- [ ] Build the separate authorized cloud upload/parent-reconciliation adapter, including resumable transitions and login boundaries (Issue #28).
+- [ ] Human source-reader image, caption, footnote and typography sign-off before `FULL_BOOK_CONFIRMED`.
+
 ## Decision gates
 
 - `STRUCTURE_PASS_COMPLETENESS_UNVERIFIED` never means `FULL_TEXT_CONFIRMED`.

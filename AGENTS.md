@@ -19,6 +19,7 @@ Project: WeRead Archive Agent (personal local ebook workflow)
 - Do not claim complete just because the CLI returns `FILES_READY_COMPLETENESS_UNVERIFIED`. Compare the reader catalog, check front/middle/end and image references. Ask the user only for steps that truly require a person.
 - If `LOGIN_REQUIRED`, `MANUAL_VERIFICATION_REQUIRED`, `WEB_UNAVAILABLE`, or `ACCESS_RESTRICTED`, stop that book and report a succinct blocker. No captcha bypass, simulated user identity, fingerprint evasion, high-rate retry loops, or scraping inaccessible pages.
 - `upstream --update` is an explicit controlled step, not performed before every export. Record SHA and re-run the fixture tests and 2-chapter sample after updates.
+- Before reporting a private cloud delivery, prepare an allowlisted file manifest with `tools.private_release_manifest`; require `tools.private_release_verify` to return `PRIVATE_DELIVERY_PASS` from actual cloud IDs, correct parent folder, exact bytes, owner-only permissions and independently downloaded cloud SHA256. This is an offline verifier, **not an uploader**. Never treat Drive UI 'upload complete' or name-only search as delivery proof.
 - Never commit/export credential files, copyrighted book contents, screenshots of real book chapters, or real user metadata into this public repository.
 - External GUI/browser/login execution is on the user's authorized local computer only. GitHub Actions must only use synthetic fixtures and public repository metadata.
 
