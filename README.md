@@ -186,6 +186,16 @@ python -m tools.private_release_verify `
 
 成功状态为 `PRIVATE_DELIVERY_PASS`；如存在同名多份、传错目录、权限异常、云端缺 SHA 或不一致，一律返回 `PRIVATE_DELIVERY_INCOMPLETE` 并提供机器可读失败原因。**此功能不执行上传/移动，也不读取 Google Cookie**。详细见 [P3-E 私人交付门禁](docs/P3E_PRIVATE_DELIVERY_GATE.md)。
 
+## P3-H｜冻结章节与整书的图文保真校验
+
+全书下载和 EPUB 合并完成之后，可以用**离线、只读**的源码到成品校验门禁，确保已保存的原始章节文本、正文图注、图片字节、alt 描述、图像资源及 spine 章节顺序不因合并/排版丢失：
+
+~~~powershell
+python -m tools.cached_source_parity --book-dir ".local/library/<reader-id>" --compiled ".local/library/<reader-id>/final/v3-headings/book.epub" --output ".local/parity-receipt.json"
+~~~
+
+状态为 `P3H_CACHED_SOURCE_PARITY_PASS` 或 `P3H_CACHED_SOURCE_PARITY_INCOMPLETE`（非零退出），JSON 不输出私人书籍正文与哈希。仅使用本地冻结缓存，不登录微信读书，不进行在线抓取或云盘上传。它**不是**出版社母版校勘或真人阅读器视觉终审。具体门禁和合成失败案例见 [P3-H 缓存来源保真说明](docs/P3H_CACHED_SOURCE_PARITY.md)，版权页合成标题修复见 [P3-F 视觉规则](docs/P3F_VISUAL_REVIEW_GATE.md)。
+
 ## 导出结果
 
 ```text
