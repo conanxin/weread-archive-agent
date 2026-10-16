@@ -31,6 +31,14 @@ LEADING_PAIR = re.compile(
     r"(?P<original><h1\b[^>]*>.*?</h1>)",
     re.I | re.S,
 )
+# In some front matter the original H1 is wrapped in a dedicated source
+# copyright-title div, so the immediate H1/H1 rule alone misses it.
+COPYRIGHT_PAIR = re.compile(
+    r'(<body\b[^>]*>\s*)(?P<generated><h1>[^<]*</h1>)(?P<gap>\s*)'
+    r'(?P<original><div class="newCopyRightTitleWrapper">\s*'
+    r'<h1 class="newCopyRightTitle">[^<]*</h1>\s*</div>)',
+    re.I | re.S,
+)
 HEADING_TEXT = re.compile(r"<[^>]*>", re.S)
 
 
@@ -39,7 +47,7 @@ def _heading_text(markup: str) -> str:
 
 
 def dedupe_one_chapter(xhtml: str, *, catalog_title: str) -> tuple[str, bool]:
-    match = LEADING_PAIR.search(xhtml)
+    match = LEADING_PAIR.search(xhtml) or COPYRIGHT_PAIR.search(xhtml)
     if not match:
         return xhtml, False
     generated = _heading_text(match.group("generated"))
@@ -76,6 +84,7 @@ def audit_and_build(
     book_dir: Path,
     inspector,
     build_versioned: bool = False,
+    target_version: str = "v2-headings",
 ) -> dict:
     book_dir = book_dir.resolve()
     source = book_dir / "final" / "book.epub"
@@ -89,7 +98,9 @@ def audit_and_build(
     original_sha, expected, old_check = _source_qa(book_dir, source, inspector)
     if len(entries) != expected:
         raise ValueError("CHAPTER_COVERAGE_MISMATCH")
-    new_epub = book_dir / "final" / "v2-headings" / "book.epub"
+    if target_version not in {"v2-headings", "v3-headings"}:
+        raise ValueError("UNKNOWN_VERSIONED_OUTPUT")
+    new_epub = book_dir / "final" / target_version / "book.epub"
     changed_ordinals: list[int] = []
     affected = {}
     with zipfile.ZipFile(source) as z:
@@ -117,9 +128,9 @@ def audit_and_build(
         "deduplicated_count": len(changed_ordinals),
         "deduplicated_ordinals": changed_ordinals,
         "criterion": (
-            "At the start of body, generated literal <h1>catalog title</h1> "
-            "is immediately followed by source H1 with exactly the same "
-            "visible title after whitespace normalization."
+            "At the start of body, a generated plain <h1>catalog title</h1> "
+            "precedes an identical source H1 directly or within the exact "
+            "copyright wrapper; text matches the frozen catalog title."
         ),
         "original_unchanged": True,
         "note": (
@@ -178,12 +189,15 @@ def main():
     parser = argparse.ArgumentParser(description="Offline, provenance-gated heading QA")
     parser.add_argument("--book-dir", type=Path, required=True)
     parser.add_argument("--build-versioned", action="store_true",
-                        help="Write a versioned v2 EPUB while preserving the original")
+                        help="Write a versioned EPUB while preserving the original")
+    parser.add_argument("--output-version", choices=["v2-headings", "v3-headings"],
+                        default="v2-headings")
     args = parser.parse_args()
     import wereadlab
     outcome = audit_and_build(
         book_dir=args.book_dir, inspector=wereadlab.inspect_epub,
         build_versioned=args.build_versioned,
+        target_version=args.output_version,
     )
     print(json.dumps(outcome, ensure_ascii=False, indent=2))
 

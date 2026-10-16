@@ -30,6 +30,35 @@ class HeadingTransformTests(unittest.TestCase):
         self.assertIn('src="images/sample.png"',fixed)
         self.assertEqual(source.replace('<h1>章节　标题</h1>','',1),fixed)
 
+    def test_wrapped_copyright_title_only_removes_generated_h1(self):
+        source=(
+            '<html><body>\n<h1>合成版权页</h1>\n'
+            '<div class="newCopyRightTitleWrapper">'
+            '<h1 class="newCopyRightTitle">合成版权页</h1></div>'
+            '<p>保留出版资料。</p></body></html>'
+        )
+        fixed,changed=dedupe_one_chapter(source,catalog_title="合成版权页")
+        self.assertTrue(changed)
+        self.assertEqual(fixed,source.replace("<h1>合成版权页</h1>","",1))
+        self.assertIn('<h1 class="newCopyRightTitle">合成版权页</h1>',fixed)
+        self.assertIn("保留出版资料",fixed)
+
+    def test_wrapped_copyright_fails_closed_without_exact_provenance(self):
+        pairs=[
+            ("newOtherTitle","newCopyRightTitle","合成版权页"),
+            ("newCopyRightTitleWrapper","wrongClass","合成版权页"),
+            ("newCopyRightTitleWrapper","newCopyRightTitle","另一个标题"),
+        ]
+        for wrapper,cls,body_title in pairs:
+            with self.subTest(wrapper=wrapper,cls=cls,body_title=body_title):
+                source=(
+                    '<body><h1>合成版权页</h1>'
+                    f'<div class="{wrapper}"><h1 class="{cls}">{body_title}</h1></div>'
+                    '<p>不要改动</p></body>'
+                )
+                self.assertEqual(dedupe_one_chapter(source,catalog_title="合成版权页"),
+                                 (source,False))
+
     def test_difference_or_intervening_content_is_not_removed(self):
         variants=[
             '<body><h1>第一节</h1><p>有字</p><h1>第一节</h1></body>',
@@ -104,6 +133,30 @@ class VersionedBuildTests(unittest.TestCase):
             with self.assertRaisesRegex(FileExistsError,"VERSIONED_OUTPUT_ALREADY_EXISTS"):
                 audit_and_build(book_dir=folder,inspector=app.inspect_epub,
                                 build_versioned=True)
+
+    def test_v3_versioned_output_keeps_existing_v2_and_original(self):
+        with tempfile.TemporaryDirectory() as td:
+            folder,original=self.setup_book(Path(td))
+            result_v2=audit_and_build(
+                book_dir=folder,inspector=app.inspect_epub,
+                build_versioned=True,target_version="v2-headings"
+            )
+            v2=folder/"final/v2-headings/book.epub"
+            v2_sha=hashlib.sha256(v2.read_bytes()).hexdigest()
+            original_sha=hashlib.sha256(original.read_bytes()).hexdigest()
+            result_v3=audit_and_build(
+                book_dir=folder,inspector=app.inspect_epub,
+                build_versioned=True,target_version="v3-headings"
+            )
+            v3=folder/"final/v3-headings/book.epub"
+            self.assertEqual(result_v3["spine_chapters"],2)
+            self.assertTrue(v3.is_file())
+            self.assertEqual(hashlib.sha256(v2.read_bytes()).hexdigest(),v2_sha)
+            self.assertEqual(hashlib.sha256(original.read_bytes()).hexdigest(),original_sha)
+            self.assertEqual(result_v3["epub_sha256"],hashlib.sha256(v3.read_bytes()).hexdigest())
+            with self.assertRaisesRegex(ValueError,"UNKNOWN_VERSIONED_OUTPUT"):
+                audit_and_build(book_dir=folder,inspector=app.inspect_epub,
+                                target_version="../unsafe")
 
     def test_modified_source_book_hash_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
