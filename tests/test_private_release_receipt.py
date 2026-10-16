@@ -69,6 +69,12 @@ class PrivateReleaseTests(unittest.TestCase):
         cloud["files"].append(dict(cloud["files"][0],id="cloud-duplicate"))
         self.assertIn("AMBIGUOUS_SAME_NAME",[x["status"] for x in verify_release(manifest,cloud)["items"]])
 
+    def test_drive_metadata_returns_byte_sizes_as_strings(self):
+        _,manifest,cloud=self.create_fixture()
+        for x in cloud["files"]:
+            x["bytes"]=str(x["bytes"])
+        self.assertEqual(verify_release(manifest,cloud)["status"],"PRIVATE_DELIVERY_PASS")
+
     def test_missing_cloud_id_blocks(self):
         _,manifest,cloud=self.create_fixture()
         cloud["files"][0]["id"]=""
