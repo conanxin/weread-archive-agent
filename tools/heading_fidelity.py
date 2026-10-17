@@ -62,6 +62,13 @@ SECOND_TITLE_DASH_ONE_PAIR = re.compile(
     r'(?P<original><h2 class="secondTitle-1">[^<]*</h2>)',
     re.I | re.S,
 )
+# P8-B: exact source <h2 class="secondTitle"> without an id, observed in
+# a separate source family. This NEVER activates in the earlier versions.
+SECOND_TITLE_NO_ID_PAIR = re.compile(
+    r'(<body\b[^>]*>\s*)(?P<generated><h1>[^<]*</h1>)(?P<gap>\s*)'
+    r'(?P<original><h2 class="secondTitle">[^<]*</h2>)',
+    re.I | re.S,
+)
 HEADING_TEXT = re.compile(r"<[^>]*>", re.S)
 
 
@@ -72,7 +79,8 @@ def _heading_text(markup: str) -> str:
 def dedupe_one_chapter(xhtml: str, *, catalog_title: str,
                        include_source_h2: bool = False,
                        include_city_h2: bool = False,
-                       include_dash_one_h2: bool = False) -> tuple[str, bool]:
+                       include_dash_one_h2: bool = False,
+                       include_no_id_h2: bool = False) -> tuple[str, bool]:
     match = LEADING_PAIR.search(xhtml) or COPYRIGHT_PAIR.search(xhtml)
     if match is None and include_source_h2:
         match = SECOND_TITLE_PAIR.search(xhtml)
@@ -80,6 +88,8 @@ def dedupe_one_chapter(xhtml: str, *, catalog_title: str,
         match = CITY_SECTION_PAIR.search(xhtml)
     if match is None and include_dash_one_h2:
         match = SECOND_TITLE_DASH_ONE_PAIR.search(xhtml)
+    if match is None and include_no_id_h2:
+        match = SECOND_TITLE_NO_ID_PAIR.search(xhtml)
     if not match:
         return xhtml, False
     generated = _heading_text(match.group("generated"))
@@ -130,7 +140,7 @@ def audit_and_build(
     original_sha, expected, old_check = _source_qa(book_dir, source, inspector)
     if len(entries) != expected:
         raise ValueError("CHAPTER_COVERAGE_MISMATCH")
-    if target_version not in {"v2-headings", "v3-headings", "v4-headings", "v5-headings", "v6-headings"}:
+    if target_version not in {"v2-headings", "v3-headings", "v4-headings", "v5-headings", "v6-headings", "v7-headings"}:
         raise ValueError("UNKNOWN_VERSIONED_OUTPUT")
     new_epub = book_dir / "final" / target_version / "book.epub"
     changed_ordinals: list[int] = []
@@ -147,9 +157,10 @@ def audit_and_build(
             xhtml = z.read(chapter_path).decode("utf-8-sig")
             new, changed = dedupe_one_chapter(
                 xhtml, catalog_title=row["chapter_title"],
-                include_source_h2=(target_version in {"v4-headings", "v5-headings", "v6-headings"}),
-                include_city_h2=(target_version in {"v5-headings", "v6-headings"}),
-                include_dash_one_h2=(target_version == "v6-headings"),
+                include_source_h2=(target_version in {"v4-headings", "v5-headings", "v6-headings", "v7-headings"}),
+                include_city_h2=(target_version in {"v5-headings", "v6-headings", "v7-headings"}),
+                include_dash_one_h2=(target_version in {"v6-headings", "v7-headings"}),
+                include_no_id_h2=(target_version == "v7-headings"),
             )
             if changed:
                 changed_ordinals.append(n)
@@ -166,7 +177,8 @@ def audit_and_build(
             "At the start of body, a generated plain <h1>catalog title</h1> "
             "precedes an identical source title (H1, wrapped copyright H1, or "
             "v4 secondTitle H2, v5 txtheading-1-15 H2, or "
-            "v6 secondTitle-1 H2); matches frozen catalog."
+            "v6 secondTitle-1 H2, or v7 secondTitle H2 without id); "
+            "matches frozen catalog."
         ),
         "original_unchanged": True,
         "note": (
@@ -226,7 +238,7 @@ def main():
     parser.add_argument("--book-dir", type=Path, required=True)
     parser.add_argument("--build-versioned", action="store_true",
                         help="Write a versioned EPUB while preserving the original")
-    parser.add_argument("--output-version", choices=["v2-headings", "v3-headings", "v4-headings", "v5-headings", "v6-headings"],
+    parser.add_argument("--output-version", choices=["v2-headings", "v3-headings", "v4-headings", "v5-headings", "v6-headings", "v7-headings"],
                         default="v2-headings")
     args = parser.parse_args()
     import wereadlab
