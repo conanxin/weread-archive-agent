@@ -47,6 +47,13 @@ SECOND_TITLE_PAIR = re.compile(
     r'(?P<original><h2 class="secondTitle" id="[^"]+">[^<]*</h2>)',
     re.I | re.S,
 )
+# P4-F: this book has an original source H2 of a different exact class.
+# This rule is isolated in v5 to preserve earlier version policies.
+CITY_SECTION_PAIR = re.compile(
+    r'(<body\b[^>]*>\s*)(?P<generated><h1>[^<]*</h1>)(?P<gap>\s*)'
+    r'(?P<original><h2 class="txtheading-1-15" id="[^"]+">[^<]*</h2>)',
+    re.I | re.S,
+)
 HEADING_TEXT = re.compile(r"<[^>]*>", re.S)
 
 
@@ -55,10 +62,13 @@ def _heading_text(markup: str) -> str:
 
 
 def dedupe_one_chapter(xhtml: str, *, catalog_title: str,
-                       include_source_h2: bool = False) -> tuple[str, bool]:
+                       include_source_h2: bool = False,
+                       include_city_h2: bool = False) -> tuple[str, bool]:
     match = LEADING_PAIR.search(xhtml) or COPYRIGHT_PAIR.search(xhtml)
     if match is None and include_source_h2:
         match = SECOND_TITLE_PAIR.search(xhtml)
+    if match is None and include_city_h2:
+        match = CITY_SECTION_PAIR.search(xhtml)
     if not match:
         return xhtml, False
     generated = _heading_text(match.group("generated"))
@@ -109,7 +119,7 @@ def audit_and_build(
     original_sha, expected, old_check = _source_qa(book_dir, source, inspector)
     if len(entries) != expected:
         raise ValueError("CHAPTER_COVERAGE_MISMATCH")
-    if target_version not in {"v2-headings", "v3-headings", "v4-headings"}:
+    if target_version not in {"v2-headings", "v3-headings", "v4-headings", "v5-headings"}:
         raise ValueError("UNKNOWN_VERSIONED_OUTPUT")
     new_epub = book_dir / "final" / target_version / "book.epub"
     changed_ordinals: list[int] = []
@@ -126,7 +136,8 @@ def audit_and_build(
             xhtml = z.read(chapter_path).decode("utf-8-sig")
             new, changed = dedupe_one_chapter(
                 xhtml, catalog_title=row["chapter_title"],
-                include_source_h2=(target_version == "v4-headings"),
+                include_source_h2=(target_version in {"v4-headings", "v5-headings"}),
+                include_city_h2=(target_version == "v5-headings"),
             )
             if changed:
                 changed_ordinals.append(n)
@@ -142,7 +153,8 @@ def audit_and_build(
         "criterion": (
             "At the start of body, a generated plain <h1>catalog title</h1> "
             "precedes an identical source title (H1, wrapped copyright H1, or "
-            "v4-only attributed secondTitle H2); matches frozen catalog."
+            "v4 secondTitle H2 or v5 txtheading-1-15 H2); "
+            "matches frozen catalog."
         ),
         "original_unchanged": True,
         "note": (
@@ -202,7 +214,7 @@ def main():
     parser.add_argument("--book-dir", type=Path, required=True)
     parser.add_argument("--build-versioned", action="store_true",
                         help="Write a versioned EPUB while preserving the original")
-    parser.add_argument("--output-version", choices=["v2-headings", "v3-headings", "v4-headings"],
+    parser.add_argument("--output-version", choices=["v2-headings", "v3-headings", "v4-headings", "v5-headings"],
                         default="v2-headings")
     args = parser.parse_args()
     import wereadlab
