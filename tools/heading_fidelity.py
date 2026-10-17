@@ -65,7 +65,7 @@ SECOND_TITLE_DASH_ONE_PAIR = re.compile(
 # P7: a distinct source family has an original h2.secondTitle WITHOUT id.
 # Opt in only via v7; retain the strict id-bearing v4 rule unchanged.
 SECOND_TITLE_NO_ID_PAIR = re.compile(
-    r'(<body\\b[^>]*>\\s*)(?P<generated><h1>[^<]*</h1>)(?P<gap>\\s*)'
+    r'(<body\b[^>]*>\s*)(?P<generated><h1>[^<]*</h1>)(?P<gap>\s*)'
     r'(?P<original><h2 class="secondTitle">[^<]*</h2>)',
     re.I | re.S,
 )
