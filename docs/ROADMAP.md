@@ -82,6 +82,15 @@ Status date: 2026-10-14 (P2-D2 retrospective). Scope: personal-scale local autom
 - [ ] 用户指定第四本真实微信读书阅读页，取得独立目录、前中后小样与新书章队列。在此之前不推断 reader ID、不要复用前三本路径。
 - [ ] 下一本遵循有界续传、离线图文及注释QA、固定 A4 PDF、真实 owner-only Drive 父目录+完整 SHA 回读；整书人工阅读签收独立。
 
+## P4-H｜四本导出复盘、第五本导出准备｜2026-10-17
+
+- [x] 第四本146/146章有界采集，145处来源证明的合成H1修复，351/351正文图片/原资产字节对照，634页 A4 PDF / 146书签，10/10 owner-only私人云端完整SHA256读回。源码与旧版均未覆盖。
+- [x] 本地授权Drive实际目录核对发现EPUB再次错放根目录，按真实ID移动后验证 parent/唯一owner/大小；TXT旧下载入口失败、独立重试完整字节SHA通过。记录两条可复用故障和真实修复方法。
+- [x] 既有通用 private_release_manifest/private_release_verify 在第四本10份云端真实 metadata、下载SHA回执上再次独立返回 PRIVATE_DELIVERY_PASS；下一本优先复用此工具，不要重写验收器。
+- [x] 将22/66/602/146四种不同目录和故障的操作流程整理到 docs/P4H_FOUR_BOOK_POSTMORTEM_FIFTH_PLAYBOOK.md，并更新README/AGENTS历史指令。
+- [ ] 第五本书的用户指定真实 https://weread.qq.com/web/reader/... 链接（当前缺失）；没有目标时不猜书、不初始化实际章节队列，不从前四本复制数据。
+- [ ] 待第五本真实URL确认后运行G0-G2，建立独立catalog/SQLite、代表性前中后小样，再进行有界采集、预合并风险检测、来源保真、PDF与私有交付QA。全书人工阅读签收独立。
+
 ## Decision gates
 
 - `STRUCTURE_PASS_COMPLETENESS_UNVERIFIED` never means `FULL_TEXT_CONFIRMED`.
