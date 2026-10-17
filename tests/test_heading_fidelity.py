@@ -108,6 +108,44 @@ class HeadingTransformTests(unittest.TestCase):
                     raw,catalog_title="第一节",include_source_h2=True,
                     include_city_h2=True),(raw,False))
 
+    def test_v6_secondtitle_dash_one_h2_strict_generated_h1_removal(self):
+        source=(
+            '<body><h1>遗迹考察</h1>'
+            '<h2 class="secondTitle-1">遗迹考察</h2>'
+            '<p>合成学术考察正文与照片说明。</p></body>'
+        )
+        for previous in [
+            {},
+            {"include_source_h2":True},
+            {"include_source_h2":True,"include_city_h2":True},
+        ]:
+            with self.subTest(previous=previous):
+                self.assertEqual(
+                    dedupe_one_chapter(source,catalog_title="遗迹考察",**previous),
+                    (source,False))
+        amended,changed=dedupe_one_chapter(
+            source,catalog_title="遗迹考察",include_source_h2=True,
+            include_city_h2=True,include_dash_one_h2=True)
+        self.assertTrue(changed)
+        self.assertEqual(amended,source.replace("<h1>遗迹考察</h1>","",1))
+        self.assertIn('class="secondTitle-1"',amended)
+        self.assertIn("合成学术考察正文与照片说明。",amended)
+
+    def test_v6_dash_one_h2_does_not_remove_unverified_source(self):
+        invalid=[
+            '<h2 class="secondTitle-2">遗迹考察</h2>',
+            '<h2 class="secondTitle-1" id="extra">遗迹考察</h2>',
+            '<h2 class="secondTitle-1">另一个标题</h2>',
+            '<p>真实内容</p><h2 class="secondTitle-1">遗迹考察</h2>',
+            '<img src="true-figure.jpg"/><h2 class="secondTitle-1">遗迹考察</h2>'
+        ]
+        for original in invalid:
+            raw='<body><h1>遗迹考察</h1>'+original+'</body>'
+            with self.subTest(original=original[:50]):
+                self.assertEqual(dedupe_one_chapter(
+                    raw,catalog_title="遗迹考察",include_source_h2=True,
+                    include_city_h2=True,include_dash_one_h2=True),(raw,False))
+
     def test_untrusted_h2_or_different_catalog_stays_unchanged(self):
         variations=[
             '<h2 class="anotherTitle" id="bw1">第二节</h2>',
