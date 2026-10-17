@@ -10,7 +10,7 @@ from zipfile import ZipFile
 import wereadlab as app
 from test_chapter_worker import FixtureProvider, fixture_workspace, run
 from tools.book_assembly import assemble_book
-from tools.note_fidelity import PASS, INCOMPLETE, check_notes
+from tools.note_fidelity import PASS, INCOMPLETE, check_notes, pdf_note_multiplicity
 
 
 class NoteFidelityTests(unittest.TestCase):
@@ -119,6 +119,26 @@ class NoteFidelityTests(unittest.TestCase):
         report=check_notes(book,compiled,inspector=app.inspect_epub)
         self.assertEqual(report["status"],INCOMPLETE)
         self.assertIn("RAW_PARTIAL_MISSING",self.kinds(report))
+
+    def test_pdf_inline_note_duplicate_occurrences_all_present(self):
+        expected = ["〔注：甲〕", "〔注：甲〕", "〔注：乙〕"]
+        result = pdf_note_multiplicity(expected, "前文 〔注：甲〕 接续 〔注：乙〕 〔注：甲〕")
+        self.assertEqual(result["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_PASS")
+        self.assertEqual((result["expected"], result["matched"]), (3, 3))
+        self.assertEqual(result["missing"], 0)
+        self.assertEqual(result["extra"], 0)
+
+    def test_pdf_inline_note_missing_repeated_occurrence_rejected(self):
+        expected = ["〔注：甲〕", "〔注：甲〕", "〔注：乙〕"]
+        result = pdf_note_multiplicity(expected, "〔注：甲〕〔注：乙〕")
+        self.assertEqual(result["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_INCOMPLETE")
+        self.assertEqual((result["matched"], result["missing"], result["extra"]), (2, 1, 0))
+
+    def test_pdf_inline_note_extra_occurrence_rejected(self):
+        expected = ["〔注：甲〕", "〔注：乙〕"]
+        result = pdf_note_multiplicity(expected, "〔注：甲〕〔注：乙〕〔注：甲〕")
+        self.assertEqual(result["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_INCOMPLETE")
+        self.assertEqual((result["matched"], result["missing"], result["extra"]), (2, 0, 1))
 
     def test_invalid_heading_policy_fails_closed(self):
         book,compiled=self.case()

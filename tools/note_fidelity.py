@@ -32,6 +32,27 @@ def normalize(text: str) -> str:
     return "".join(unicodedata.normalize("NFC", text).split())
 
 
+def pdf_note_multiplicity(note_labels: list[str], pdf_text: str) -> dict:
+    """Count full-label text occurrences, including duplicate note content.
+
+    This is global PDF text evidence, not per-page position or visual fidelity.
+    """
+    expected = Counter(normalize(label) for label in note_labels)
+    extracted = normalize(pdf_text)
+    found = {label: extracted.count(label) for label in expected if label}
+    matched = sum(min(number, found.get(label, 0)) for label, number in expected.items())
+    excess = sum(max(0, found.get(label, 0) - number) for label, number in expected.items())
+    missing = sum(max(0, number - found.get(label, 0)) for label, number in expected.items())
+    return {
+        "status": ("PDF_NOTE_OCCURRENCE_MULTIPLICITY_PASS"
+                   if not missing and not excess else "PDF_NOTE_OCCURRENCE_MULTIPLICITY_INCOMPLETE"),
+        "expected": sum(expected.values()),
+        "matched": matched,
+        "missing": missing,
+        "extra": excess,
+    }
+
+
 class NoteBody(HTMLParser):
     """Extract normalized body text, note anchors, and source/destination labels."""
 
@@ -175,6 +196,8 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
 
     pdf_status = "NOT_REQUESTED"
     pdf_unique_found = None
+    pdf_occurrences = {"status": "NOT_REQUESTED", "expected": len(all_notes),
+                       "matched": None, "missing": None, "extra": None}
     if pdf is not None:
         try:
             import fitz
@@ -187,6 +210,9 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
         pdf_status = "PDF_UNIQUE_NOTE_STRINGS_PASS" if pdf_unique_found == len(unique) else "PDF_NOTE_TEXT_INCOMPLETE"
         if pdf_unique_found != len(unique):
             flag("PDF_NOTE_TEXT_MISSING")
+        pdf_occurrences = pdf_note_multiplicity(all_notes, text)
+        if pdf_occurrences["status"] != "PDF_NOTE_OCCURRENCE_MULTIPLICITY_PASS":
+            flag("PDF_NOTE_OCCURRENCE_MULTIPLICITY_MISMATCH")
     unique_count = len({normalize(label) for label in all_notes})
     return {
         "status": PASS if not issues else INCOMPLETE,
@@ -199,6 +225,11 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
         "unique_note_labels": unique_count,
         "pdf_text_search_status": pdf_status,
         "pdf_unique_note_labels_found": pdf_unique_found,
+        "pdf_note_occurrence_status": pdf_occurrences["status"],
+        "pdf_note_occurrences_expected": pdf_occurrences["expected"],
+        "pdf_note_occurrences_matched": pdf_occurrences["matched"],
+        "pdf_note_occurrences_missing": pdf_occurrences["missing"],
+        "pdf_note_occurrences_extra": pdf_occurrences["extra"],
         "issue_count": len(issues),
         "issue_codes": dict(sorted(Counter(i["kind"] for i in issues).items())),
         "issue_examples": issues[:25],

@@ -212,6 +212,10 @@ python -m tools.note_fidelity --book-dir ".local/library/<reader-id>" --compiled
 
 这一步不会打开网页或读取 Cookie。**文字/锚点检查通过 ≠ 原阅读器点击弹窗样式通过**；网页注释浮层需单独抽样，真人阅读签收继续保持待确认。详细见 [P3-J 注释保真验收](docs/P3J_NOTE_FIDELITY.md)。
 
+## P3-K｜内联注释阅读方式定稿与 PDF 次数验收
+
+注释全文直接保留在正文中作为默认阅读形式，不再以模拟网页弹窗为目标制造新版本。针对阅读器内嵌文字易读且方便检索的场景，tools.note_fidelity 在传入 --pdf 时，还会严格核对**所有注释的出现次数（含相同注释重复出现）**，缺漏或多出均阻止通过。已验收的版本继续作为首选阅读候选，不重新生成电子书。注释样式被接受不等于整本书的阅读体验签收。方法和阶段结论见 [P3-K 内联注释阅读政策](docs/P3K_INLINE_NOTE_READING_POLICY.md)。
+
 ## 导出结果
 
 ```text

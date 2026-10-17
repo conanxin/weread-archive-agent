@@ -29,5 +29,9 @@ python -m tools.note_fidelity --book-dir ".local/library/<reader-id>" --compiled
 
 内容保存、锚点对应、PDF 可检索、在线弹窗抽样、人工阅读签收是不同证据层级。最终状态依然 HUMAN_VISUAL_FIDELITY_PENDING / FULL_BOOK_CONFIRMED=false。
 
+## P3-K 补充：内联注释默认接受与重复次数核验
+
+阅读方式已确定：注释完整地内联显示即可，不要求与来源在线弹窗交互一致；现有已交付版本作为首选候选，不创建专门恢复弹窗的 v5。指定 PDF 时，tools.note_fidelity 现在除确认每种注释可搜索外，还逐种核对全文出现**次数**，对同样文字重复标注采取计数方式，若缺失或多出则报 PDF_NOTE_OCCURRENCE_MULTIPLICITY_MISMATCH。内容、锚点、原版保存、用户全书阅读签收仍独立评估。更多见 docs/P3K_INLINE_NOTE_READING_POLICY.md。
+
 ## 合成回归测试
 tests/test_note_fidelity.py 使用纯合成 EPUB 验证正常注释、通用占位、错字、错位、缺失原始文件与不安全标题策略等情况；GitHub 不包含私人书籍文件、截图、Cookie、真实正文或原始图片。
