@@ -91,8 +91,10 @@ class DriveAPI:
     def __init__(self, token: str, session=None):
         if not token:
             raise PlacementError("GOOGLE_ACCESS_TOKEN_REQUIRED")
-        import requests
-        self.http = session or requests.Session()
+        if session is None:
+            import requests
+            session = requests.Session()
+        self.http = session
         self.http.headers.update({"Authorization": "Bearer " + token})
 
     @staticmethod
