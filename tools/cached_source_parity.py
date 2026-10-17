@@ -108,7 +108,7 @@ def verify_cached_source(
     book_dir: Path, compiled_epub: Path, *, inspector=None, heading_policy: str = "v3"
 ) -> dict:
     """Fail closed, return aggregate evidence and issue codes, no original prose."""
-    if heading_policy not in {"v3", "v4", "v5"}:
+    if heading_policy not in {"v3", "v4", "v5", "v6"}:
         raise ValueError("UNKNOWN_HEADING_POLICY")
     if inspector is None:
         from wereadlab import inspect_epub
@@ -168,8 +168,9 @@ def verify_cached_source(
                 src_data = source.read(src_name).decode("utf-8-sig")
                 expected_data, changed = dedupe_one_chapter(
                     src_data, catalog_title=row["chapter_title"],
-                    include_source_h2=(heading_policy in {"v4", "v5"}),
-                    include_city_h2=(heading_policy == "v5")
+                    include_source_h2=(heading_policy in {"v4", "v5", "v6"}),
+                    include_city_h2=(heading_policy in {"v5", "v6"}),
+                    include_dash_one_h2=(heading_policy == "v6")
                 )
                 deduped += int(changed)
                 dest_data = book.read(chapter_name).decode("utf-8-sig")
@@ -228,8 +229,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Offline cached source EPUB parity checker")
     parser.add_argument("--book-dir", type=Path, required=True)
     parser.add_argument("--compiled", type=Path, required=True)
-    parser.add_argument("--heading-policy", choices=["v3", "v4", "v5"], default="v3",
-                        help="v4 includes secondTitle H2; v5 also supports proven txtheading-1-15 H2")
+    parser.add_argument("--heading-policy", choices=["v3", "v4", "v5", "v6"], default="v3",
+                        help="v4 secondTitle, v5 txtheading-1-15, v6 secondTitle-1 source H2")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:

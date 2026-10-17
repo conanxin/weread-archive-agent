@@ -226,6 +226,10 @@ python -m tools.note_fidelity --book-dir ".local/library/<reader-id>" --compiled
 
 新增第三类原书 H2 结构：当前上游章节源有 `h2 class="txtheading-1-15" id="..."`，其前面被导出器加上相同标题的无属性 H1。仅在确证两个标题和冻结目录完全一致且相邻时，允许另存 `v5-headings` 删除生成 H1、保留原书 H2。以前的 v2/v3/v4 规则及书籍不变；全书必须继续通过 cached_source_parity --heading-policy v5。方法见 [P4-F 原始城市 H2 标题保真](docs/P4F_CITY_HEADING_FIDELITY.md)。
 
+## P5-B｜来源 secondTitle-1 的严格标题保真
+
+部分书籍中真实来源 H2 class=secondTitle-1 没有 id，而导出器在其前面增加了与目录相同的无属性 H1。新的独立 v6-headings 策略只在两个节点相邻、文本完全相等且与冻结 catalog 同章标题一致时移除多余的生成 H1；不改变旧 v2/v3/v4/v5 的默认口径。必须经 cached_source_parity --heading-policy v6 全章文字和图片字节核验，详见 [P5-B secondTitle-1 标题规则](docs/P5B_SECOND_TITLE_DASH_ONE_H2.md)。
+
 ## 导出结果
 
 ```text
