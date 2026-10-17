@@ -216,11 +216,11 @@ python -m tools.note_fidelity --book-dir ".local/library/<reader-id>" --compiled
 
 注释全文直接保留在正文中作为默认阅读形式，不再以模拟网页弹窗为目标制造新版本。针对阅读器内嵌文字易读且方便检索的场景，tools.note_fidelity 在传入 --pdf 时，还会严格核对**所有注释的出现次数（含相同注释重复出现）**，缺漏或多出均阻止通过。已验收的版本继续作为首选阅读候选，不重新生成电子书。注释样式被接受不等于整本书的阅读体验签收。方法和阶段结论见 [P3-K 内联注释阅读政策](docs/P3K_INLINE_NOTE_READING_POLICY.md)。
 
-## 跨书籍复用｜三本导出经验与下一本启动
+## 跨书籍复用｜四本完整导出经验与第五本准备
 
-三本个人电子书实例分别完成 22、66、602 个有效目录条目；第三本的 11 张章节地图、长篇后记、标题重复、注释和大型 PDF 渲染问题均已建立专门处理与交付证据。新增离线 `tools.preassembly_risk_audit`：在整书合并前扫描完成的章节缓存，发现平台预估正文显著短缺和未引用大图，避免完整 ZIP/manifest 没有报错却漏图漏字。文档：[三本导出经验复盘与第四本标准门禁](docs/P4E_THREE_BOOK_POSTMORTEM_AND_NEXT_BOOK.md)。
+已完成四本私人阅读归档，分别覆盖 22、66、602、146 个有效章节/条目。常见异常包括：很短的 EPUB 正文需 TXT 后备、源地图 JPG 未被 XHTML 正确引用、多类真实 H1/H2 与合成标题重复、CSS 装饰图片警告、数百章 Calibre 子进程延迟，以及 Google Drive 上传错父目录。第四本已完成 146/146 来源文字、351/351 图片资源与引用、634 页 A4 PDF、10/10 私人云端下载 SHA-256。方法见 [P4-H 四本导出复盘与第五本标准流程](docs/P4H_FOUR_BOOK_POSTMORTEM_FIFTH_PLAYBOOK.md)。
 
-下一本要先由用户提供真实阅读器 URL。确认新书后，使用它自身的 catalog/SQLite 路径，依次通过实质章节小样、有界采集、风险检查、来源保真、A4 PDF、private Drive 独立回下载 SHA-256。**第四本未提供目标，尚未开始实际采集。**旧 [双书→第三本流程](docs/CROSS_BOOK_THIRD_BOOK_PLAYBOOK.md) 仅作为历史案例，不再代表当前阶段。用户已确认默认全文内联注释，不要求重复制作弹窗版。
+第五本沿用已经存在的 `tools.preassembly_risk_audit`、`tools.heading_fidelity`、`tools.cached_source_parity`、必要时 `tools.note_fidelity`，以及通用的 `tools.private_release_manifest` 和 `tools.private_release_verify`；**不再为每本书重造一套验收脚本**。默认注释全文内联正文，A4 PDF。需先取得用户真实的下一本阅读页 URL，确认新书目录及前/中/后小样，才初始化独立队列和有界采集。**第五本尚未指定书目，不能复用第四本的 ID 或宣称已经采集。**旧的 [三本→第四本流程](docs/P4E_THREE_BOOK_POSTMORTEM_AND_NEXT_BOOK.md) 仅为历史快照。
 
 ## P4-F｜不同来源 H2 的严格标题修复
 
