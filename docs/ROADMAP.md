@@ -74,6 +74,14 @@ Status date: 2026-10-14 (P2-D2 retrospective). Scope: personal-scale local autom
 - [ ] 收到第三本经授权的真实 reader URL，完成独立 catalog 和含实质正文的章节 pilot；**当前没有给定第三本，禁止猜 ID 或虚报正在导出**。
 - [ ] pilot 通过后才按 bounded queue 和每章 SHA 采集、合并、来源/视觉 QA、owner-only Drive 全量 SHA 回读，交付再与人工阅读签收分开。
 
+## P4-E｜三本导书复盘与第四本复用准备｜2026-10-17
+
+- [x] 第三本 602/602 个条目完成有界采集、11 章路线图与后记共12处独立图文融合；来源缓存正文 602/602、引用图片37/37、资源86/86、PDF814页602书签、私有Drive 9/9 完整云端 SHA 回读。
+- [x] 归纳 22/66/602 三种不同目录结构与典型问题，更新新书执行契约和跨书经验文档 `docs/P4E_THREE_BOOK_POSTMORTEM_AND_NEXT_BOOK.md`。
+- [x] 新增只读 preassembly_risk_audit：识别可疑短章、未引用的大幅路线图及重复图片，不因 zip 完整就认定视觉完整；纯合成用例覆盖。
+- [ ] 用户指定第四本真实微信读书阅读页，取得独立目录、前中后小样与新书章队列。在此之前不推断 reader ID、不要复用前三本路径。
+- [ ] 下一本遵循有界续传、离线图文及注释QA、固定 A4 PDF、真实 owner-only Drive 父目录+完整 SHA 回读；整书人工阅读签收独立。
+
 ## Decision gates
 
 - `STRUCTURE_PASS_COMPLETENESS_UNVERIFIED` never means `FULL_TEXT_CONFIRMED`.

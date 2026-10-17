@@ -1,4 +1,6 @@
-# WeRead Archive Agent｜双书经验教训与第三本标准作业流程
+# WeRead Archive Agent｜双书经验教训与第三本标准作业流程（历史归档）
+
+> 此页是2026-10-17第三本开始前的历史记录。第三本后来已完成602/602章节、12处图文恢复和9/9私人云盘验收。启动第四本请使用 [P4-E三本导出复盘与下一本启动规范](P4E_THREE_BOOK_POSTMORTEM_AND_NEXT_BOOK.md)，不要按下文旧的 THIRD_BOOK_TARGET_PENDING 状态行动。
 
 状态：2026-10-17。范围：个人授权的本地电子书阅读归档、质量验证、私人交付。本文不包含真实书名、reader ID、书籍正文、图像、账号凭证、私人 Google Drive 文件 ID 或链接。真实证据记录于个人 Notion 和 .local。
 
