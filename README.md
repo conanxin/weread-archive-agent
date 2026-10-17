@@ -202,6 +202,16 @@ python -m tools.cached_source_parity --book-dir ".local/library/<reader-id>" --c
 
 先运行只读审计，随后明确构建候选版，再用 --heading-policy v4 的缓存来源校验门禁核对 66 章文字、图片字节、资源完整性。统一 A4 PDF 规格，避免把排版页数变化误认为正文丢失。详细方法见 [P3-I 来源阅读器视觉门禁](docs/P3I_SOURCE_READER_VISUAL_FIDELITY.md)。**注释弹窗与阅读者最终签收依然待完成；不自动标记 FULL_BOOK_CONFIRMED。**
 
+## P3-J｜注释文字和正文锚点的离线验收
+
+保真不仅是图片与正文数量。微信读书的部分注释通过缺失的 Images/note.png 图标携带 alt 正文；修复后的 EPUB 改为可见的 `〔注：……〕` 文字。新增只读门禁，逐一核对来源注释的完整内容、段落位置以及 PDF 可检索性：
+
+~~~powershell
+python -m tools.note_fidelity --book-dir ".local/library/<reader-id>" --compiled ".local/library/<reader-id>/final/v4-headings/book.epub" --heading-policy v4 --pdf ".local/library/<reader-id>/final/v4-headings/book.pdf" --output ".local/note-fidelity-receipt.json"
+~~~
+
+这一步不会打开网页或读取 Cookie。**文字/锚点检查通过 ≠ 原阅读器点击弹窗样式通过**；网页注释浮层需单独抽样，真人阅读签收继续保持待确认。详细见 [P3-J 注释保真验收](docs/P3J_NOTE_FIDELITY.md)。
+
 ## 导出结果
 
 ```text
