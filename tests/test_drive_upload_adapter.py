@@ -6,7 +6,7 @@ import unittest
 
 from tools.private_release_manifest import build_manifest
 from tools.drive_upload_adapter import (
-    PlacementError, checked_sources, md5_file, reconcile, owner_only,
+    PlacementError, DriveAPI, CHUNK, checked_sources, md5_file, reconcile, owner_only,
 )
 
 
@@ -159,6 +159,83 @@ class DriveUploadAdapterTests(unittest.TestCase):
     def test_hash_helper_matches_python_standard(self):
         target = self.root / "part.epub"
         self.assertEqual(md5_file(target), hashlib.md5(target.read_bytes()).hexdigest())
+
+
+class StubResponse:
+    def __init__(self, status, payload=None, headers=None):
+        self.status_code = status
+        self._payload = payload or {}
+        self.headers = headers or {}
+
+    def json(self):
+        return self._payload
+
+
+class FakeUploadSession:
+    def __init__(self, *, invalid_location=False, bad_range=False):
+        self.headers = {}
+        self.init_payload = None
+        self.sent_ranges = []
+        self.invalid_location = invalid_location
+        self.bad_range = bad_range
+
+    def post(self, url, *, params, json, headers, timeout):
+        self.init_payload = {
+            "url": url, "params": params, "body": json,
+            "headers": headers, "timeout": timeout,
+        }
+        location = ("https://attacker.example/upload" if self.invalid_location
+                    else "https://www.googleapis.com/upload/drive/v3/files?upload_id=fixture")
+        return StubResponse(200, headers={"Location": location})
+
+    def put(self, url, *, data, headers, timeout):
+        self.sent_ranges.append((headers["Content-Range"], len(data)))
+        spec = headers["Content-Range"]
+        finished = int(spec.split("-")[-1].split("/")[0]) + 1
+        total = int(spec.split("/")[-1])
+        if finished == total:
+            return StubResponse(200, {"id": "created-fixture"})
+        return StubResponse(308, headers={
+            "Range": ("bytes=0-999999999" if self.bad_range
+                      else "bytes=0-" + str(finished - 1))
+        })
+
+
+class DriveWireFormatTests(unittest.TestCase):
+    def test_resumable_upload_posts_parent_and_byte_ranges(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            filename = Path(tmp) / "synthetic.epub"
+            filename.write_bytes(b"f" * (CHUNK + 17))
+            session = FakeUploadSession()
+            drive = DriveAPI("synthetic-oauth-for-unit-test", session=session)
+            response = drive.upload(filename, "expected-folder")
+            self.assertEqual(response["id"], "created-fixture")
+            self.assertEqual(session.init_payload["body"]["parents"],
+                             ["expected-folder"])
+            self.assertEqual(session.init_payload["body"]["name"], "synthetic.epub")
+            self.assertEqual(session.init_payload["headers"]["X-Upload-Content-Length"],
+                             str(CHUNK + 17))
+            self.assertEqual(session.sent_ranges, [
+                (f"bytes 0-{CHUNK - 1}/{CHUNK + 17}", CHUNK),
+                (f"bytes {CHUNK}-{CHUNK + 16}/{CHUNK + 17}", 17),
+            ])
+            self.assertTrue(session.headers["Authorization"].startswith("Bearer "))
+
+    def test_resumable_session_rejects_non_google_host(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            filename = Path(tmp) / "synthetic.epub"
+            filename.write_bytes(b"fake")
+            drive = DriveAPI("fake", session=FakeUploadSession(invalid_location=True))
+            with self.assertRaisesRegex(PlacementError, "INVALID_GOOGLE_UPLOAD_SESSION"):
+                drive.upload(filename, "expected-folder")
+
+    def test_bad_308_range_stops_without_claiming_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            filename = Path(tmp) / "synthetic.epub"
+            filename.write_bytes(b"z" * (CHUNK + 1))
+            drive = DriveAPI("fake", session=FakeUploadSession(bad_range=True))
+            with self.assertRaisesRegex(PlacementError, "UPLOAD_RANGE_INVALID"):
+                drive.upload(filename, "expected-folder")
 
 
 if __name__ == "__main__":
