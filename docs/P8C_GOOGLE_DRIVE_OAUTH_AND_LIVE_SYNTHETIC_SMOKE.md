@@ -52,3 +52,20 @@ python -m tools.drive_upload_adapter --manifest '.local\p8c_synthetic_manifest.j
 新增纯合成测试覆盖：缺少用户批准必须拒绝、缓存使用、过期token刷新、撤销刷新、scope不匹配停止、desktop client JSON格式、首次交互式授权缓存写入。不使用真实账号或图书。
 
 真实连接器实测与Python适配器首次OAuth验证必须分开留证。七本已交付文件、对应Notion技术验收以及G7人工阅读签收状态均保持原样。后续可继续研究长时间上传时的token更新与真正断点续传。
+
+
+## 6. 推荐的一条命令真实测试（完成OAuth准备后）
+
+无需手动创建manifest或私有测试文件，直接运行本次新增的合成真实云端验证入口：
+
+~~~powershell
+cd D:\CodexData\weread-archive-agent
+python -m tools.drive_live_smoke --oauth-client-json '.local\google_drive_desktop_client.json' --authorize
+~~~
+
+该命令使用本机已批准的OAuth（首次带 --authorize 才请求本人许可），按以下顺序执行：
+创建随机命名的临时私人Drive文件夹 → 冻结合成TXT原始SHA → 默认计划模式确认拟创建 → 通过本地P8-A上传适配器请求真实Google Drive上传且指定parent → 第二次运行适配器确认复用原ID → 将同一文件ID移动到Drive根目录 → 再经适配器把同一ID恢复到测试文件夹 → 独立Drive API下载全部字节计算SHA-256 → 交给现有private_release_verify总验收 → 清理临时合成文件及文件夹。
+
+只有所有条件都通过且清理成功，才输出 P8C_LOCAL_ADAPTER_REAL_API_PASS。若中途网络/API/权限失败，程序应失败且不得冒称成功；隐私与授权信息不会打印。私人执行回执保留在 .local\p8c_google_drive_rest_live_smoke.json；不要提交这个文件。
+
+此命令**尚未执行真实REST云端测试**，因为本地仍缺用户自己的Desktop OAuth client JSON。GitHub CI测试中模拟整条流程，不会登录任何Google账号。
