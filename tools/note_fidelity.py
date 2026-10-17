@@ -132,7 +132,7 @@ def _spine_xhtml(z: ZipFile) -> str:
 def check_notes(book_dir: Path, compiled_epub: Path, *,
                 heading_policy: str = "v3", pdf: Path | None = None,
                 inspector=None) -> dict:
-    if heading_policy not in {"v3", "v4", "v5", "v6"}:
+    if heading_policy not in {"v3", "v4", "v5", "v6", "v7"}:
         raise ValueError("UNKNOWN_HEADING_POLICY")
     if inspector is None:
         from wereadlab import inspect_epub
@@ -150,7 +150,7 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
         issues.append(problem)
     if candidate["status"] != "STRUCTURE_PASS_COMPLETENESS_UNVERIFIED":
         flag("COMPILED_EPUB_STRUCTURE_INVALID")
-    raw_count = repaired_count = matches = anchors = 0
+    raw_count = selected_count = repaired_count = matches = anchors = 0
     all_notes: list[str] = []
     with ZipFile(compiled_epub) as final:
         if final.testzip() is not None:
@@ -170,24 +170,38 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
                 if raw.testzip() is not None:
                     flag("RAW_PARTIAL_CRC_INVALID", n)
                     continue
-                source = _spine_xhtml(raw)
+                raw_markup = _spine_xhtml(raw)
+            # The selected chapter can legitimately differ from the raw partial
+            # after a source-proven TXT fallback (e.g. extra copyright metadata).
+            # Compare full body anchors against that queued, SHA-checked source,
+            # while independently checking that its notes match the raw partial.
+            with ZipFile(row["file"]) as selected:
+                if selected.testzip() is not None:
+                    flag("SELECTED_SOURCE_CRC_INVALID", n)
+                    continue
+                source = _spine_xhtml(selected)
             source, _ = dedupe_one_chapter(
                 source, catalog_title=row["chapter_title"],
-                include_source_h2=(heading_policy in {"v4", "v5", "v6"}),
-                include_city_h2=(heading_policy in {"v5", "v6"}),
-                include_dash_one_h2=(heading_policy == "v6"),
+                include_source_h2=(heading_policy in {"v4", "v5", "v6", "v7"}),
+                include_city_h2=(heading_policy in {"v5", "v6", "v7"}),
+                include_dash_one_h2=(heading_policy in {"v6", "v7"}),
+                include_no_id_h2=(heading_policy == "v7"),
             )
-            src, dst = NoteBody(), NoteBody()
+            raw_body, src, dst = NoteBody(), NoteBody(), NoteBody()
+            raw_body.feed(raw_markup)
             src.feed(source)
             dst.feed(final.read(target).decode("utf-8-sig"))
-            src.close();dst.close()
-            raw_count += len(src.notes)
+            raw_body.close();src.close();dst.close()
+            raw_count += len(raw_body.notes)
+            selected_count += len(src.notes)
             repaired_count += len(dst.notes)
+            if raw_body.notes != src.notes:
+                flag("RAW_SELECTED_NOTE_MISMATCH", n)
             if src.anchor_text == dst.anchor_text:
                 anchors += 1
             else:
                 flag("BODY_OR_NOTE_ANCHOR_MISMATCH", n)
-            if len(src.notes) != len(dst.notes):
+            if len(raw_body.notes) != len(dst.notes) or len(src.notes) != len(dst.notes):
                 flag("NOTE_COUNT_MISMATCH", n)
             for before, after in zip(src.notes, dst.notes):
                 if before == after:
@@ -222,6 +236,7 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
         "chapters_expected": len(rows),
         "chapters_body_anchor_exact": anchors,
         "source_note_images": raw_count,
+        "selected_source_note_markers": selected_count,
         "repaired_note_markers": repaired_count,
         "notes_text_exact": matches,
         "unique_note_labels": unique_count,
@@ -245,7 +260,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Offline repaired annotation text/anchor audit")
     parser.add_argument("--book-dir", type=Path, required=True)
     parser.add_argument("--compiled", type=Path, required=True)
-    parser.add_argument("--heading-policy", choices=["v3", "v4", "v5", "v6"], default="v3")
+    parser.add_argument("--heading-policy", choices=["v3", "v4", "v5", "v6", "v7"], default="v3")
     parser.add_argument("--pdf", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()

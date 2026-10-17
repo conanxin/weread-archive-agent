@@ -140,6 +140,74 @@ class NoteFidelityTests(unittest.TestCase):
         self.assertEqual(result["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_INCOMPLETE")
         self.assertEqual((result["matched"], result["missing"], result["extra"]), (2, 0, 1))
 
+    @staticmethod
+    def reassemble_selected_source(book):
+        output = book / "final" / "book.epub"
+        output.unlink()
+        report = assemble_book(
+            db_path=book / "chapters.sqlite", catalog_path=book / "catalog.json",
+            output=output, inspector=app.inspect_epub
+        )
+        assert report["status"] == "BOOK_EPUB_READY_COMPLETENESS_UNVERIFIED"
+        return output
+
+    @staticmethod
+    def refresh_selected_hash(book, ordinal=1):
+        chosen = book / "chapters" / f"{ordinal:04d}.epub"
+        with closing(sqlite3.connect(book / "chapters.sqlite")) as db:
+            db.execute("UPDATE chapters SET artifact_sha256=? WHERE ordinal=?",
+                       (hashlib.sha256(chosen.read_bytes()).hexdigest(), ordinal))
+            db.commit()
+
+    def test_source_proven_txt_expansion_does_not_falsely_break_note_anchor(self):
+        book,compiled = self.case()
+        # Only the selected source has an extra body paragraph; raw partial
+        # retains its original note text and position.
+        self.modify_zip(book / "chapters" / "0001.epub",
+            lambda raw: raw.replace(
+                b"</body>", "<p>已核实的补充版权字段</p></body>".encode("utf-8"), 1))
+        self.refresh_selected_hash(book)
+        compiled = self.reassemble_selected_source(book)
+        report = check_notes(book, compiled, inspector=app.inspect_epub)
+        self.assertEqual(report["status"], PASS)
+        self.assertEqual(report["chapters_body_anchor_exact"], 2)
+        self.assertEqual(report["source_note_images"], 2)
+        self.assertEqual(report["selected_source_note_markers"], 2)
+        self.assertEqual(report["notes_text_exact"], 2)
+
+    def test_raw_note_change_is_detected_even_if_compiled_matches_selected(self):
+        book,compiled = self.case()
+        # Both chosen source and output still have the unmodified annotation,
+        # but the raw recorded source proves the note should be different.
+        self.modify_zip(book / "chapters" / "0001.partial.epub",
+            lambda raw: raw.replace(
+                "引用注释1".encode("utf-8"), "另一条注释".encode("utf-8"), 1))
+        report = check_notes(book, compiled, inspector=app.inspect_epub)
+        self.assertEqual(report["status"], INCOMPLETE)
+        self.assertIn("RAW_SELECTED_NOTE_MISMATCH", self.kinds(report))
+
+    def test_v7_no_id_heading_and_notes_are_verified_together(self):
+        book,compiled = self.case()
+        change = lambda raw: raw.replace(
+            "<h1>合成章节</h1>".encode("utf-8"),
+            '<h1>第一章</h1><h2 class="secondTitle">第一章</h2>'.encode("utf-8"), 1)
+        self.modify_zip(book / "chapters" / "0001.partial.epub", change)
+        self.modify_zip(book / "chapters" / "0001.epub", change)
+        self.refresh_selected_hash(book)
+        compiled = self.reassemble_selected_source(book)
+        self.modify_compiled(
+            compiled,
+            lambda raw: raw.replace("<h1>第一章</h1>".encode("utf-8"), b"", 1))
+        previous = check_notes(book, compiled, heading_policy="v6",
+                               inspector=app.inspect_epub)
+        self.assertEqual(previous["status"], INCOMPLETE)
+        self.assertIn("BODY_OR_NOTE_ANCHOR_MISMATCH", self.kinds(previous))
+        fixed = check_notes(book, compiled, heading_policy="v7",
+                            inspector=app.inspect_epub)
+        self.assertEqual(fixed["status"], PASS)
+        self.assertEqual(fixed["notes_text_exact"], 2)
+        self.assertEqual(fixed["chapters_body_anchor_exact"], 2)
+
     def test_invalid_heading_policy_fails_closed(self):
         book,compiled=self.case()
         with self.assertRaisesRegex(ValueError,"UNKNOWN_HEADING_POLICY"):
