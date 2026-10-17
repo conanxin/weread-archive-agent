@@ -132,7 +132,7 @@ def _spine_xhtml(z: ZipFile) -> str:
 def check_notes(book_dir: Path, compiled_epub: Path, *,
                 heading_policy: str = "v3", pdf: Path | None = None,
                 inspector=None) -> dict:
-    if heading_policy not in {"v3", "v4", "v5", "v6"}:
+    if heading_policy not in {"v3", "v4", "v5", "v6", "v7"}:
         raise ValueError("UNKNOWN_HEADING_POLICY")
     if inspector is None:
         from wereadlab import inspect_epub
@@ -173,9 +173,10 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
                 source = _spine_xhtml(raw)
             source, _ = dedupe_one_chapter(
                 source, catalog_title=row["chapter_title"],
-                include_source_h2=(heading_policy in {"v4", "v5", "v6"}),
-                include_city_h2=(heading_policy in {"v5", "v6"}),
-                include_dash_one_h2=(heading_policy == "v6"),
+                include_source_h2=(heading_policy in {"v4", "v5", "v6", "v7"}),
+                include_city_h2=(heading_policy in {"v5", "v6", "v7"}),
+                include_dash_one_h2=(heading_policy in {"v6", "v7"}),
+                include_second_title_no_id=(heading_policy == "v7"),
             )
             src, dst = NoteBody(), NoteBody()
             src.feed(source)
@@ -245,7 +246,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Offline repaired annotation text/anchor audit")
     parser.add_argument("--book-dir", type=Path, required=True)
     parser.add_argument("--compiled", type=Path, required=True)
-    parser.add_argument("--heading-policy", choices=["v3", "v4", "v5", "v6"], default="v3")
+    parser.add_argument("--heading-policy", choices=["v3", "v4", "v5", "v6", "v7"], default="v3")
     parser.add_argument("--pdf", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
