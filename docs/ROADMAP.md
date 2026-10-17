@@ -66,6 +66,14 @@ Status date: 2026-10-14 (P2-D2 retrospective). Scope: personal-scale local autom
 - [ ] Build the separate authorized cloud upload/parent-reconciliation adapter, including resumable transitions and login boundaries (Issue #28).
 - [ ] Human source-reader image, caption, footnote and typography sign-off before `FULL_BOOK_CONFIRMED`.
 
+## P4-A｜双书复盘与第三本迁移｜2026-10-17
+
+- [x] 对第一本 22 章与第二本 66 章的来源、标题、注释、图片、PDF、私有交付失败模式做通用复盘，见 `docs/CROSS_BOOK_THIRD_BOOK_PLAYBOOK.md`。
+- [x] 修正 AGENTS.md 中过时且矛盾的 queue init/run 指令；新书全部队列操作明确指向返回的 book-specific catalog/SQLite，而非误选 `--latest`。
+- [x] Windows 本地工具 doctor 实际返回 READY，两个已存在的书籍 catalog 可以读取；私人第三本任务状态保留 `G0_TARGET_REQUIRED`，未抓取正文。
+- [ ] 收到第三本经授权的真实 reader URL，完成独立 catalog 和含实质正文的章节 pilot；**当前没有给定第三本，禁止猜 ID 或虚报正在导出**。
+- [ ] pilot 通过后才按 bounded queue 和每章 SHA 采集、合并、来源/视觉 QA、owner-only Drive 全量 SHA 回读，交付再与人工阅读签收分开。
+
 ## Decision gates
 
 - `STRUCTURE_PASS_COMPLETENESS_UNVERIFIED` never means `FULL_TEXT_CONFIRMED`.
