@@ -230,11 +230,24 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--token-env", default="GOOGLE_DRIVE_ACCESS_TOKEN")
+    parser.add_argument("--oauth-client-json", type=Path,
+                        help="Local desktop OAuth client JSON from your own Google Cloud project")
+    parser.add_argument("--oauth-token-cache", type=Path,
+                        default=Path(".local/google_drive_oauth_user.json"))
+    parser.add_argument("--authorize", action="store_true",
+                        help="Open local browser for explicit first-time OAuth approval")
     parser.add_argument("--execute", action="store_true", help="Create/move missing files")
     args = parser.parse_args()
     if args.receipt.exists():
         raise PlacementError("PRIVATE_RECEIPT_EXISTS")
     token = os.environ.get(args.token_env, "")
+    if not token:
+        from tools.drive_oauth_bootstrap import get_access_token
+        token = get_access_token(
+            token_cache=args.oauth_token_cache,
+            client_json=args.oauth_client_json,
+            authorize=args.authorize,
+        )
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     report = reconcile(manifest, DriveAPI(token), execute=args.execute)
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
