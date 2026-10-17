@@ -75,6 +75,39 @@ class HeadingTransformTests(unittest.TestCase):
         self.assertIn('<h2 class="secondTitle" id="heading_id_2">第二节</h2>',fixed)
         self.assertIn("保留原文与注释",fixed)
 
+    def test_city_txtheading_h2_needs_explicit_v5_policy(self):
+        source=(
+            '<body><h1>第一节</h1>'
+            '<h2 class="txtheading-1-15" id="pre3_3_1_2">第一节</h2>'
+            '<p>合成运河城市正文。</p></body>'
+        )
+        self.assertEqual(
+            dedupe_one_chapter(source,catalog_title="第一节",include_source_h2=True),
+            (source,False)
+        )
+        fixed,changed=dedupe_one_chapter(
+            source,catalog_title="第一节",include_source_h2=True,
+            include_city_h2=True
+        )
+        self.assertTrue(changed)
+        self.assertEqual(fixed,source.replace("<h1>第一节</h1>","",1))
+        self.assertIn('class="txtheading-1-15"',fixed)
+        self.assertIn("合成运河城市正文",fixed)
+
+    def test_city_h2_different_title_class_or_intervening_content_refused(self):
+        invalid=[
+            '<h2 class="other-heading" id="c1">第一节</h2>',
+            '<h2 class="txtheading-1-15">第一节</h2>',
+            '<h2 class="txtheading-1-15" id="c1">第二节</h2>',
+            '<img src="genuine.jpg"/><h2 class="txtheading-1-15" id="c1">第一节</h2>',
+        ]
+        for suffix in invalid:
+            raw='<body><h1>第一节</h1>'+suffix+'</body>'
+            with self.subTest(suffix=suffix[:45]):
+                self.assertEqual(dedupe_one_chapter(
+                    raw,catalog_title="第一节",include_source_h2=True,
+                    include_city_h2=True),(raw,False))
+
     def test_untrusted_h2_or_different_catalog_stays_unchanged(self):
         variations=[
             '<h2 class="anotherTitle" id="bw1">第二节</h2>',

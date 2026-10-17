@@ -222,6 +222,10 @@ python -m tools.note_fidelity --book-dir ".local/library/<reader-id>" --compiled
 
 下一本要先由用户提供真实阅读器 URL。确认新书后，使用它自身的 catalog/SQLite 路径，依次通过实质章节小样、有界采集、风险检查、来源保真、A4 PDF、private Drive 独立回下载 SHA-256。**第四本未提供目标，尚未开始实际采集。**旧 [双书→第三本流程](docs/CROSS_BOOK_THIRD_BOOK_PLAYBOOK.md) 仅作为历史案例，不再代表当前阶段。用户已确认默认全文内联注释，不要求重复制作弹窗版。
 
+## P4-F｜不同来源 H2 的严格标题修复
+
+新增第三类原书 H2 结构：当前上游章节源有 `h2 class="txtheading-1-15" id="..."`，其前面被导出器加上相同标题的无属性 H1。仅在确证两个标题和冻结目录完全一致且相邻时，允许另存 `v5-headings` 删除生成 H1、保留原书 H2。以前的 v2/v3/v4 规则及书籍不变；全书必须继续通过 cached_source_parity --heading-policy v5。方法见 [P4-F 原始城市 H2 标题保真](docs/P4F_CITY_HEADING_FIDELITY.md)。
+
 ## 导出结果
 
 ```text
