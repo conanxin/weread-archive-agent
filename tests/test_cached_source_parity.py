@@ -15,13 +15,13 @@ from tools.cached_source_parity import PASS, INCOMPLETE, verify_cached_source
 
 
 class CachedSourceParityTests(unittest.TestCase):
-    def build_case(self, *, with_images=True, wrapped_title=False, second_title=False, city_title=False, dash_title=False):
+    def build_case(self, *, with_images=True, wrapped_title=False, second_title=False, city_title=False, dash_title=False, no_id_title=False):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
         book, cat, db, cookie = fixture_workspace(root)
         self.assertEqual(run(FixtureProvider(), cat, db, cookie, limit=2)["complete"], 2)
-        if with_images or wrapped_title or second_title or city_title or dash_title:
+        if with_images or wrapped_title or second_title or city_title or dash_title or no_id_title:
             for ordinal in (1, 2):
                 source = book / "chapters" / f"{ordinal:04d}.epub"
                 with ZipFile(source) as old:
@@ -66,6 +66,12 @@ class CachedSourceParityTests(unittest.TestCase):
                         '<h1>第一章</h1>'
                         '<h2 class="secondTitle-1">第一章</h2>'
                     )
+                if no_id_title and ordinal == 1:
+                    xhtml = xhtml.replace(
+                        "<h1>合成章节</h1>",
+                        '<h1>第一章</h1>'
+                        '<h2 class="secondTitle">第一章</h2>'
+                    )
                 files["OEBPS/c1.xhtml"] = xhtml.encode()
                 with ZipFile(source, "w") as dest:
                     for name, data in files.items():
@@ -80,7 +86,7 @@ class CachedSourceParityTests(unittest.TestCase):
         res = assemble_book(db_path=db, catalog_path=cat,
                             output=compiled, inspector=app.inspect_epub)
         self.assertEqual(res["status"], "BOOK_EPUB_READY_COMPLETENESS_UNVERIFIED")
-        if wrapped_title or second_title or city_title or dash_title:
+        if wrapped_title or second_title or city_title or dash_title or no_id_title:
             self.rewrite_epub(compiled, {
                 "OEBPS/text/chapter_0001.xhtml":
                 lambda raw: raw.replace(b"<h1>\xe7\xac\xac\xe4\xb8\x80\xe7\xab\xa0</h1>", b"", 1)
@@ -163,6 +169,20 @@ class CachedSourceParityTests(unittest.TestCase):
         self.assertEqual(final["status"],PASS)
         self.assertEqual(final["source_proven_generated_h1_removed"],1)
         self.assertEqual(final["chapters_text_exact"],2)
+
+    def test_v7_no_id_original_h2_requires_explicit_policy(self):
+        book,compiled = self.build_case(with_images=True, no_id_title=True)
+        previous = verify_cached_source(
+            book, compiled, inspector=app.inspect_epub, heading_policy="v6")
+        self.assertEqual(previous["status"], INCOMPLETE)
+        self.assertIn("BODY_TEXT_MISMATCH", self.kinds(previous))
+        updated = verify_cached_source(
+            book, compiled, inspector=app.inspect_epub, heading_policy="v7")
+        self.assertEqual(updated["status"], PASS)
+        self.assertEqual(updated["chapters_text_exact"], 2)
+        self.assertEqual(updated["source_proven_generated_h1_removed"], 1)
+        self.assertEqual(updated["image_reference_pairs_checked"], 2)
+        self.assertEqual(updated["issue_count"], 0)
 
     def test_unknown_heading_policy_fails_closed(self):
         book, compiled = self.build_case(with_images=False)
