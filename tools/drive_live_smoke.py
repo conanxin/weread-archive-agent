@@ -15,8 +15,8 @@ import tempfile
 import uuid
 
 from tools.drive_oauth_bootstrap import get_access_token
-from tools.drive_upload_adapter import API, FIELDS, DriveAPI, PlacementError, (
-    owner_only, reconcile, single_parent
+from tools.drive_upload_adapter import (
+    API, FIELDS, DriveAPI, PlacementError, owner_only, reconcile, single_parent
 )
 from tools.private_release_manifest import build_manifest
 from tools.private_release_verify import verify_release
