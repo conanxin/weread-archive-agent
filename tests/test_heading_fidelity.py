@@ -146,6 +146,42 @@ class HeadingTransformTests(unittest.TestCase):
                     raw,catalog_title="遗迹考察",include_source_h2=True,
                     include_city_h2=True,include_dash_one_h2=True),(raw,False))
 
+    def test_v7_requires_explicit_no_id_secondtitle_policy(self):
+        source = (
+            '<body><h1>第二节</h1>'
+            '<h2 class="secondTitle">第二节</h2>'
+            '<p>正文〔注：一〕。</p></body>'
+        )
+        self.assertEqual(dedupe_one_chapter(
+            source, catalog_title="第二节", include_source_h2=True,
+            include_city_h2=True, include_dash_one_h2=True), (source, False))
+        result, changed = dedupe_one_chapter(
+            source, catalog_title="第二节", include_source_h2=True,
+            include_city_h2=True, include_dash_one_h2=True,
+            include_no_id_h2=True)
+        self.assertTrue(changed)
+        self.assertEqual(result, source.replace("<h1>第二节</h1>", "", 1))
+        self.assertIn("正文〔注：一〕", result)
+
+    def test_v7_no_id_secondtitle_refuses_unproven_sources(self):
+        invalid = [
+            '<h2 class="secondTitle" id="real">第二节</h2>',
+            '<h2 class="secondTitle-1">第二节</h2>',
+            '<h2 class="secondTitle other">第二节</h2>',
+            '<h2 class="secondTitle">另一节</h2>',
+            '<p>真正正文</p><h2 class="secondTitle">第二节</h2>',
+            '<img src="genuine-photo.jpg"/><h2 class="secondTitle">第二节</h2>',
+        ]
+        for fragment in invalid:
+            source = '<body><h1>第二节</h1>' + fragment + '</body>'
+            with self.subTest(fragment=fragment):
+                self.assertEqual(dedupe_one_chapter(
+                    source, catalog_title="第二节", include_no_id_h2=True),
+                    (source, False))
+        source = '<body><h1 class="genuine">第二节</h1><h2 class="secondTitle">第二节</h2></body>'
+        self.assertEqual(dedupe_one_chapter(
+            source, catalog_title="第二节", include_no_id_h2=True), (source, False))
+
     def test_untrusted_h2_or_different_catalog_stays_unchanged(self):
         variations=[
             '<h2 class="anotherTitle" id="bw1">第二节</h2>',
@@ -235,6 +271,40 @@ class VersionedBuildTests(unittest.TestCase):
             with self.assertRaisesRegex(FileExistsError,"VERSIONED_OUTPUT_ALREADY_EXISTS"):
                 audit_and_build(book_dir=folder,inspector=app.inspect_epub,
                                 build_versioned=True)
+
+    def test_v7_versioned_epub_removes_only_source_proven_no_id_h2(self):
+        with tempfile.TemporaryDirectory() as td:
+            folder, original = self.setup_book(Path(td))
+            before = "<h1>第一章</h1>\n<h1>第一章</h1>".encode("utf-8")
+            replacement = "<h1>第一章</h1>\n<h2 class=\"secondTitle\">第一章</h2>".encode("utf-8")
+            staged = original.with_suffix(".replace")
+            with zipfile.ZipFile(original) as z, zipfile.ZipFile(staged, "w") as out:
+                for item in z.infolist():
+                    data = z.read(item.filename)
+                    if item.filename == "OEBPS/text/chapter_0001.xhtml":
+                        self.assertIn(before, data)
+                        data = data.replace(before, replacement, 1)
+                    out.writestr(item, data)
+            os.replace(staged, original)
+            baseline = hashlib.sha256(original.read_bytes()).hexdigest()
+            qa = folder / "final" / "fullbook_QA_report.json"
+            metadata = json.loads(qa.read_text(encoding="utf-8"))
+            metadata["artifacts"]["book.epub"]["sha256"] = baseline
+            qa.write_text(json.dumps(metadata), encoding="utf-8")
+            v6 = audit_and_build(book_dir=folder, inspector=app.inspect_epub,
+                                 target_version="v6-headings")
+            self.assertEqual(v6["deduplicated_count"], 0)
+            result = audit_and_build(book_dir=folder, inspector=app.inspect_epub,
+                                     build_versioned=True, target_version="v7-headings")
+            self.assertEqual(result["deduplicated_ordinals"], [1])
+            output = folder / "final" / "v7-headings" / "book.epub"
+            self.assertTrue(output.is_file())
+            self.assertEqual(hashlib.sha256(original.read_bytes()).hexdigest(), baseline)
+            with zipfile.ZipFile(original) as z, zipfile.ZipFile(output) as out:
+                source = z.read("OEBPS/text/chapter_0001.xhtml")
+                candidate = out.read("OEBPS/text/chapter_0001.xhtml")
+                self.assertEqual(candidate, source.replace("<h1>第一章</h1>".encode(), b"", 1))
+                self.assertIn('class="secondTitle"'.encode(), candidate)
 
     def test_v3_versioned_output_keeps_existing_v2_and_original(self):
         with tempfile.TemporaryDirectory() as td:
