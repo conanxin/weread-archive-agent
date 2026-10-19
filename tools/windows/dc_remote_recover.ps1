@@ -14,6 +14,7 @@ $base = Join-Path $env:LOCALAPPDATA 'DesktopCommanderRemote'
 $entry = Join-Path $base 'pinned-runtime-0.3.0\node_modules\@wonderwhy-er\desktop-commander\dist\index.js'
 $session = Join-Path $env:USERPROFILE '.desktop-commander-device\device.json'
 $stateFile = Join-Path $base 'recovery-attempts.json'
+$watchdogTaskName = 'DesktopCommanderRemoteWatchdog'
 
 function Get-RemoteNodeProcesses {
     $all = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction Stop)
@@ -68,6 +69,8 @@ function Get-Summary {
     $taskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
     $processes = @(Get-RemoteNodeProcesses)
     $npx = @(Get-StalledNpxProcesses)
+    $watchdog = Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction SilentlyContinue
+    $watchdogInfo = if ($watchdog) { Get-ScheduledTaskInfo -TaskName $watchdogTaskName -ErrorAction SilentlyContinue } else { $null }
     $connected = 0
     foreach ($proc in $processes) {
         try {
@@ -85,6 +88,11 @@ function Get-Summary {
         RemoteProcessCount = $processes.Count
         RemoteEstablishedTcp = $connected
         LegacyNpxProcessCount = $npx.Count
+        ExistingWatchdogRegistered = [bool]$watchdog
+        ExistingWatchdogEnabled = [bool]($watchdog -and $watchdog.State -ne 'Disabled')
+        ExistingWatchdogState = if ($watchdog) { [string]$watchdog.State } else { 'ABSENT' }
+        ExistingWatchdogLastResult = if ($watchdogInfo) { [int]$watchdogInfo.LastTaskResult } else { $null }
+        ExistingWatchdogLastRunLocal = if ($watchdogInfo) { $watchdogInfo.LastRunTime.ToString('s') } else { $null }
         LogIndicators = (Get-LogIndicators)
         CredentialContentsRead = $false
         CloudCommandsExecuted = $false
@@ -121,6 +129,7 @@ try {
     if (-not $Apply) { $status = 'DRY_RUN_NEEDS_EXPLICIT_APPLY' }
     elseif ($summary.RemoteProcessCount -gt 0) { $status = 'SKIP_REMOTE_PROCESS_EXISTS' }
     elseif ($summary.LegacyNpxProcessCount -gt 0) { $status = 'SKIP_LEGACY_NPX_PROCESS_PRESENT' }
+    elseif ($summary.ExistingWatchdogEnabled) { $status = 'SKIP_EXISTING_WATCHDOG_MANAGES_RECOVERY' }
     elseif (-not $summary.PinnedEntryExists) { $status = 'SKIP_PINNED_RUNTIME_MISSING' }
     elseif (-not $summary.SessionFileExists) { $status = 'SKIP_LOCAL_SESSION_MISSING_USER_AUTH_REQUIRED' }
     elseif (-not $summary.TaskEnabled) { $status = 'SKIP_TASK_DISABLED' }
