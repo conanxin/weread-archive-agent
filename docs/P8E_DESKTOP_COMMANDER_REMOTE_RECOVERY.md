@@ -28,6 +28,14 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'D:\Code
 
 每小时最多2次，至少间隔300秒；脚本只请求启动原 DesktopCommanderRemote 任务，不停止进程、修改计划任务、清理缓存或登出账号。START_REQUESTED_NOT_YET_VERIFIED表示已提交启动请求，**不是云端联通的PASS**。如发现认证问题或任务状态不明确，会按安全守卫直接跳过。
 
+## 最新P8-F4证据：已有Watchdog及自然自愈成功
+
+2026-10-19当天下午的私有Notion P8-F3/P8-F4记录提供了更新事实：用户级 DesktopCommanderRemoteWatchdog **已经安装并每5分钟检查**，14:42的一次自然退出后由它自动拉起原 Remote 任务，14:46 ChatGPT 的 ping 和只读echo均通过。**这意味着无需第二个恢复/看门狗任务**。
+
+19:26又出现了Online列表与实际ping超时的不同症状，此时不应无证据地重新启动设备。脚本因此新增对现有 DesktopCommanderRemoteWatchdog 的只读识别：如果这个Watchdog已经启用，即使显式运行RecoverOnce -Apply，也会返回 SKIP_EXISTING_WATCHDOG_MANAGES_RECOVERY，**不会插入竞争性重启**。
+
+在用户不在电脑旁的条件下，优先借Hermes/WSL跑 Diagnose 查看两个任务状态、真实进程/TCP、日志事件计数，再由ChatGPT单独验ping。只有明确证明已经存在的Watchdog不能覆盖目标故障，并经过单独维护审批，才考虑下一版改造。
+
 ## 用户不在Windows旁边时给Hermes/WSL的命令
 
 用户先前已通过WSL Windows interop完成只读诊断。如果该通道现在仍可用，可将下方一条命令发给有权访问Windows的Hermes Agent：

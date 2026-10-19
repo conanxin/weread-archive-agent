@@ -27,6 +27,14 @@ class RecoverySafetyTests(unittest.TestCase):
         ):
             self.assertIn(value, self.text)
 
+    def test_existing_watchdog_fails_closed_without_competing_restart(self):
+        self.assertIn("ExistingWatchdogEnabled", self.text)
+        self.assertIn("ExistingWatchdogLastResult", self.text)
+        self.assertIn("SKIP_EXISTING_WATCHDOG_MANAGES_RECOVERY", self.text)
+        guard = self.text.index("elseif ($summary.ExistingWatchdogEnabled)")
+        start = self.text.index("Start-ScheduledTask -TaskName $TaskName")
+        self.assertLess(guard, start)
+
     def test_auth_confirmation_and_throttle(self):
         self.assertIn("SKIP_LOCAL_SESSION_MISSING_USER_AUTH_REQUIRED", self.text)
         self.assertIn("SKIP_AUTH_INDICATION_REQUIRES_HUMAN_REVIEW", self.text)
