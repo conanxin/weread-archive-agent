@@ -20,3 +20,15 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: CLI smoke
         run: python wereadlab.py status --json
+      - name: Windows Remote recovery script syntax (no execution)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile('tools/windows/dc_remote_recover.ps1', [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Windows Remote recovery PowerShell syntax invalid"
+          }
+          Write-Host "DC_RECOVERY_POWERSHELL_SYNTAX_PASS"
