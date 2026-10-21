@@ -40,17 +40,25 @@ FOLIO_BOTTOM_FRACTION = 0.90
 
 def _standalone_digits(text: str) -> bool:
     stripped = (text or "").strip()
-    return bool(stripped) and stripped.isdigit() and len(stripped) <= FOLIO_MAX_DIGITS
+    if not stripped or len(stripped) > FOLIO_MAX_DIGITS or not stripped.isdecimal():
+        return False
+    # isdigit() also accepts superscripts and circled numbers, which int()
+    # cannot parse. Preserve any block that cannot be converted safely.
+    try:
+        int(stripped)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
 
 
 def page_number_block_indices(blocks, *, width, height, page_count) -> list[int]:
     """Return the indices of the page-number folio blocks of one page.
 
-    A folio is a standalone numeric block that is horizontally centred on the
+    A folio is a standalone decimal integer that is horizontally centred on the
     real page width, sits in the bottom band of the real page height, starts
     below every other text block of that page and carries a plausible page
     number. Every threshold is a fraction of the real page box, so a PDF of
-    another size is judged by its own geometry instead of a fixed coordinate.
+    another size is judged by its own geometry instead of a fixed y coordinate.
     """
     if width <= 0 or height <= 0:
         raise ValueError("INVALID_PAGE_GEOMETRY")
@@ -65,14 +73,20 @@ def page_number_block_indices(blocks, *, width, height, page_count) -> list[int]
             continue
         if y0 < height * FOLIO_BOTTOM_FRACTION:
             continue
-        value = int(block[4].strip())
+        try:
+            value = int((block[4] or "").strip())
+        except (TypeError, ValueError, OverflowError):
+            # Fail closed: if the candidate cannot be interpreted as an
+            # integer page number, keep the original text block.
+            continue
         if not 1 <= value <= page_count + FOLIO_VALUE_SLACK:
             continue
         candidates.append(index)
     if not candidates:
         return []
+    candidate_set = set(candidates)
     others = [block for index, block in enumerate(blocks)
-              if index not in set(candidates) and (block[4] or "").strip()]
+              if index not in candidate_set and (block[4] or "").strip()]
     if others:
         lowest = max(block[3] for block in others)
         candidates = [index for index in candidates if blocks[index][1] >= lowest]
@@ -84,13 +98,46 @@ def page_number_block_indices(blocks, *, width, height, page_count) -> list[int]
     return [lowest]
 
 
+def _display_space_blocks(raw_blocks, page):
+    """Transform text-block rectangles to display space on rotated pages.
+
+    PyMuPDF text-block coordinates are in unrotated page space, while page.rect
+    reflects rotation. Compare folio geometry in one coordinate system. If a
+    rotated page has no usable matrix, fail closed rather than guessing.
+    """
+    blocks = [(item[0], item[1], item[2], item[3], item[4] or "")
+              for item in raw_blocks]
+    rotation = int(getattr(page, "rotation", 0) or 0) % 360
+    if rotation == 0:
+        return blocks
+    matrix = getattr(page, "rotation_matrix", None)
+    if matrix is None:
+        raise ValueError("ROTATED_PAGE_MATRIX_REQUIRED")
+    a, b, c, d, e, f = (
+        float(getattr(matrix, name)) for name in ("a", "b", "c", "d", "e", "f")
+    )
+    transformed = []
+    for x0, y0, x1, y1, text in blocks:
+        points = (
+            (x0 * a + y0 * c + e, x0 * b + y0 * d + f),
+            (x0 * a + y1 * c + e, x0 * b + y1 * d + f),
+            (x1 * a + y0 * c + e, x1 * b + y0 * d + f),
+            (x1 * a + y1 * c + e, x1 * b + y1 * d + f),
+        )
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        transformed.append((min(xs), min(ys), max(xs), max(ys), text))
+    return transformed
+
+
 def pdf_text_without_page_numbers(pages) -> tuple[str, int]:
-    """Concatenate PDF text with the page-number folios removed.
+    """Concatenate PDF text with page-number folios removed.
 
     A folio is drawn at the bottom of its page but emitted first in the content
-    stream, so it lands inside any annotation that spans a page break. Removing
-    only these blocks keeps the surrounding prose, years, dates and isolated
-    body numbers untouched.
+    stream, so it lands inside any annotation that spans a page break. Text
+    block coordinates are transformed to display space for rotated pages before
+    geometry is compared with page.rect. Years, dates, Unicode symbols and
+    isolated body numbers are preserved.
 
     Returns the raw text and how many folio blocks were removed.
     """
@@ -100,29 +147,16 @@ def pdf_text_without_page_numbers(pages) -> tuple[str, int]:
     removed = 0
     for page in pages:
         raw = page.get_text("blocks")
-        blocks = [(b[0], b[1], b[2], b[3], b[4] or "") for b in raw]
+        blocks = _display_space_blocks(raw, page)
         skip = set(page_number_block_indices(
             blocks, width=page.rect.width, height=page.rect.height,
             page_count=total))
         removed += len(skip)
-        for index, block in enumerate(raw):
+        for index, item in enumerate(raw):
             if index in skip:
                 continue
-            parts.append(block[4] or "")
+            parts.append(item[4] or "")
     return "".join(parts), removed
-
-
-def pdf_content_text(pdf_path) -> tuple[str, int]:
-    """Normalized PDF content text plus the count of removed folio blocks."""
-    try:
-        import fitz
-    except ImportError as exc:
-        raise RuntimeError("PYMUPDF_REQUIRED_FOR_EXPLICIT_PDF_CHECK") from exc
-    with fitz.open(Path(pdf_path)) as doc:
-        raw, removed = pdf_text_without_page_numbers(doc)
-    return normalize(raw), removed
-
-
 def pdf_note_multiplicity(note_labels: list[str], pdf_text: str) -> dict:
     """Count full-label text occurrences, including duplicate note content.
 
