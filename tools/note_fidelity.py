@@ -32,6 +32,97 @@ def normalize(text: str) -> str:
     return "".join(unicodedata.normalize("NFC", text).split())
 
 
+FOLIO_MAX_DIGITS = 6
+FOLIO_VALUE_SLACK = 32
+FOLIO_CENTER_TOLERANCE = 0.05
+FOLIO_BOTTOM_FRACTION = 0.90
+
+
+def _standalone_digits(text: str) -> bool:
+    stripped = (text or "").strip()
+    return bool(stripped) and stripped.isdigit() and len(stripped) <= FOLIO_MAX_DIGITS
+
+
+def page_number_block_indices(blocks, *, width, height, page_count) -> list[int]:
+    """Return the indices of the page-number folio blocks of one page.
+
+    A folio is a standalone numeric block that is horizontally centred on the
+    real page width, sits in the bottom band of the real page height, starts
+    below every other text block of that page and carries a plausible page
+    number. Every threshold is a fraction of the real page box, so a PDF of
+    another size is judged by its own geometry instead of a fixed coordinate.
+    """
+    if width <= 0 or height <= 0:
+        raise ValueError("INVALID_PAGE_GEOMETRY")
+    if page_count <= 0:
+        raise ValueError("INVALID_PAGE_COUNT")
+    candidates = []
+    for index, block in enumerate(blocks):
+        if not _standalone_digits(block[4]):
+            continue
+        x0, y0, x1, y1 = block[0], block[1], block[2], block[3]
+        if abs((x0 + x1) / 2.0 - width / 2.0) > width * FOLIO_CENTER_TOLERANCE:
+            continue
+        if y0 < height * FOLIO_BOTTOM_FRACTION:
+            continue
+        value = int(block[4].strip())
+        if not 1 <= value <= page_count + FOLIO_VALUE_SLACK:
+            continue
+        candidates.append(index)
+    if not candidates:
+        return []
+    others = [block for index, block in enumerate(blocks)
+              if index not in set(candidates) and (block[4] or "").strip()]
+    if others:
+        lowest = max(block[3] for block in others)
+        candidates = [index for index in candidates if blocks[index][1] >= lowest]
+    if not candidates:
+        return []
+    # Only the single lowest candidate is a folio; a second number on the same
+    # baseline is body content and must survive.
+    lowest = max(candidates, key=lambda index: (blocks[index][1], index))
+    return [lowest]
+
+
+def pdf_text_without_page_numbers(pages) -> tuple[str, int]:
+    """Concatenate PDF text with the page-number folios removed.
+
+    A folio is drawn at the bottom of its page but emitted first in the content
+    stream, so it lands inside any annotation that spans a page break. Removing
+    only these blocks keeps the surrounding prose, years, dates and isolated
+    body numbers untouched.
+
+    Returns the raw text and how many folio blocks were removed.
+    """
+    pages = list(pages)
+    total = len(pages)
+    parts: list[str] = []
+    removed = 0
+    for page in pages:
+        raw = page.get_text("blocks")
+        blocks = [(b[0], b[1], b[2], b[3], b[4] or "") for b in raw]
+        skip = set(page_number_block_indices(
+            blocks, width=page.rect.width, height=page.rect.height,
+            page_count=total))
+        removed += len(skip)
+        for index, block in enumerate(raw):
+            if index in skip:
+                continue
+            parts.append(block[4] or "")
+    return "".join(parts), removed
+
+
+def pdf_content_text(pdf_path) -> tuple[str, int]:
+    """Normalized PDF content text plus the count of removed folio blocks."""
+    try:
+        import fitz
+    except ImportError as exc:
+        raise RuntimeError("PYMUPDF_REQUIRED_FOR_EXPLICIT_PDF_CHECK") from exc
+    with fitz.open(Path(pdf_path)) as doc:
+        raw, removed = pdf_text_without_page_numbers(doc)
+    return normalize(raw), removed
+
+
 def pdf_note_multiplicity(note_labels: list[str], pdf_text: str) -> dict:
     """Count full-label text occurrences, including duplicate note content.
 
@@ -212,15 +303,11 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
 
     pdf_status = "NOT_REQUESTED"
     pdf_unique_found = None
+    pdf_folios_removed = None
     pdf_occurrences = {"status": "NOT_REQUESTED", "expected": len(all_notes),
                        "matched": None, "missing": None, "extra": None}
     if pdf is not None:
-        try:
-            import fitz
-        except ImportError as exc:
-            raise RuntimeError("PYMUPDF_REQUIRED_FOR_EXPLICIT_PDF_CHECK") from exc
-        with fitz.open(Path(pdf)) as doc:
-            text = normalize("".join(page.get_text() for page in doc))
+        text, pdf_folios_removed = pdf_content_text(pdf)
         unique = {normalize(label) for label in all_notes}
         pdf_unique_found = sum(bool(s and s in text) for s in unique)
         pdf_status = "PDF_UNIQUE_NOTE_STRINGS_PASS" if pdf_unique_found == len(unique) else "PDF_NOTE_TEXT_INCOMPLETE"
@@ -242,6 +329,7 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
         "unique_note_labels": unique_count,
         "pdf_text_search_status": pdf_status,
         "pdf_unique_note_labels_found": pdf_unique_found,
+        "pdf_page_number_blocks_removed": pdf_folios_removed,
         "pdf_note_occurrence_status": pdf_occurrences["status"],
         "pdf_note_occurrences_expected": pdf_occurrences["expected"],
         "pdf_note_occurrences_matched": pdf_occurrences["matched"],
