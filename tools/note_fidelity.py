@@ -32,6 +32,131 @@ def normalize(text: str) -> str:
     return "".join(unicodedata.normalize("NFC", text).split())
 
 
+FOLIO_MAX_DIGITS = 6
+FOLIO_VALUE_SLACK = 32
+FOLIO_CENTER_TOLERANCE = 0.05
+FOLIO_BOTTOM_FRACTION = 0.90
+
+
+def _standalone_digits(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped or len(stripped) > FOLIO_MAX_DIGITS or not stripped.isdecimal():
+        return False
+    # isdigit() also accepts superscripts and circled numbers, which int()
+    # cannot parse. Preserve any block that cannot be converted safely.
+    try:
+        int(stripped)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
+
+
+def page_number_block_indices(blocks, *, width, height, page_count) -> list[int]:
+    """Return the indices of the page-number folio blocks of one page.
+
+    A folio is a standalone decimal integer that is horizontally centred on the
+    real page width, sits in the bottom band of the real page height, starts
+    below every other text block of that page and carries a plausible page
+    number. Every threshold is a fraction of the real page box, so a PDF of
+    another size is judged by its own geometry instead of a fixed y coordinate.
+    """
+    if width <= 0 or height <= 0:
+        raise ValueError("INVALID_PAGE_GEOMETRY")
+    if page_count <= 0:
+        raise ValueError("INVALID_PAGE_COUNT")
+    candidates = []
+    for index, block in enumerate(blocks):
+        if not _standalone_digits(block[4]):
+            continue
+        x0, y0, x1, y1 = block[0], block[1], block[2], block[3]
+        if abs((x0 + x1) / 2.0 - width / 2.0) > width * FOLIO_CENTER_TOLERANCE:
+            continue
+        if y0 < height * FOLIO_BOTTOM_FRACTION:
+            continue
+        try:
+            value = int((block[4] or "").strip())
+        except (TypeError, ValueError, OverflowError):
+            # Fail closed: if the candidate cannot be interpreted as an
+            # integer page number, keep the original text block.
+            continue
+        if not 1 <= value <= page_count + FOLIO_VALUE_SLACK:
+            continue
+        candidates.append(index)
+    if not candidates:
+        return []
+    candidate_set = set(candidates)
+    others = [block for index, block in enumerate(blocks)
+              if index not in candidate_set and (block[4] or "").strip()]
+    if others:
+        lowest = max(block[3] for block in others)
+        candidates = [index for index in candidates if blocks[index][1] >= lowest]
+    if not candidates:
+        return []
+    # Only the single lowest candidate is a folio; a second number on the same
+    # baseline is body content and must survive.
+    lowest = max(candidates, key=lambda index: (blocks[index][1], index))
+    return [lowest]
+
+
+def _display_space_blocks(raw_blocks, page):
+    """Transform text-block rectangles to display space on rotated pages.
+
+    PyMuPDF text-block coordinates are in unrotated page space, while page.rect
+    reflects rotation. Compare folio geometry in one coordinate system. If a
+    rotated page has no usable matrix, fail closed rather than guessing.
+    """
+    blocks = [(item[0], item[1], item[2], item[3], item[4] or "")
+              for item in raw_blocks]
+    rotation = int(getattr(page, "rotation", 0) or 0) % 360
+    if rotation == 0:
+        return blocks
+    matrix = getattr(page, "rotation_matrix", None)
+    if matrix is None:
+        raise ValueError("ROTATED_PAGE_MATRIX_REQUIRED")
+    a, b, c, d, e, f = (
+        float(getattr(matrix, name)) for name in ("a", "b", "c", "d", "e", "f")
+    )
+    transformed = []
+    for x0, y0, x1, y1, text in blocks:
+        points = (
+            (x0 * a + y0 * c + e, x0 * b + y0 * d + f),
+            (x0 * a + y1 * c + e, x0 * b + y1 * d + f),
+            (x1 * a + y0 * c + e, x1 * b + y0 * d + f),
+            (x1 * a + y1 * c + e, x1 * b + y1 * d + f),
+        )
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        transformed.append((min(xs), min(ys), max(xs), max(ys), text))
+    return transformed
+
+
+def pdf_text_without_page_numbers(pages) -> tuple[str, int]:
+    """Concatenate PDF text with page-number folios removed.
+
+    A folio is drawn at the bottom of its page but emitted first in the content
+    stream, so it lands inside any annotation that spans a page break. Text
+    block coordinates are transformed to display space for rotated pages before
+    geometry is compared with page.rect. Years, dates, Unicode symbols and
+    isolated body numbers are preserved.
+
+    Returns the raw text and how many folio blocks were removed.
+    """
+    pages = list(pages)
+    total = len(pages)
+    parts: list[str] = []
+    removed = 0
+    for page in pages:
+        raw = page.get_text("blocks")
+        blocks = _display_space_blocks(raw, page)
+        skip = set(page_number_block_indices(
+            blocks, width=page.rect.width, height=page.rect.height,
+            page_count=total))
+        removed += len(skip)
+        for index, item in enumerate(raw):
+            if index in skip:
+                continue
+            parts.append(item[4] or "")
+    return "".join(parts), removed
 def pdf_note_multiplicity(note_labels: list[str], pdf_text: str) -> dict:
     """Count full-label text occurrences, including duplicate note content.
 
@@ -212,15 +337,11 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
 
     pdf_status = "NOT_REQUESTED"
     pdf_unique_found = None
+    pdf_folios_removed = None
     pdf_occurrences = {"status": "NOT_REQUESTED", "expected": len(all_notes),
                        "matched": None, "missing": None, "extra": None}
     if pdf is not None:
-        try:
-            import fitz
-        except ImportError as exc:
-            raise RuntimeError("PYMUPDF_REQUIRED_FOR_EXPLICIT_PDF_CHECK") from exc
-        with fitz.open(Path(pdf)) as doc:
-            text = normalize("".join(page.get_text() for page in doc))
+        text, pdf_folios_removed = pdf_content_text(pdf)
         unique = {normalize(label) for label in all_notes}
         pdf_unique_found = sum(bool(s and s in text) for s in unique)
         pdf_status = "PDF_UNIQUE_NOTE_STRINGS_PASS" if pdf_unique_found == len(unique) else "PDF_NOTE_TEXT_INCOMPLETE"
@@ -242,6 +363,7 @@ def check_notes(book_dir: Path, compiled_epub: Path, *,
         "unique_note_labels": unique_count,
         "pdf_text_search_status": pdf_status,
         "pdf_unique_note_labels_found": pdf_unique_found,
+        "pdf_page_number_blocks_removed": pdf_folios_removed,
         "pdf_note_occurrence_status": pdf_occurrences["status"],
         "pdf_note_occurrences_expected": pdf_occurrences["expected"],
         "pdf_note_occurrences_matched": pdf_occurrences["matched"],

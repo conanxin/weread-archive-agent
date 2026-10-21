@@ -10,7 +10,39 @@ from zipfile import ZipFile
 import wereadlab as app
 from test_chapter_worker import FixtureProvider, fixture_workspace, run
 from tools.book_assembly import assemble_book
-from tools.note_fidelity import PASS, INCOMPLETE, check_notes, pdf_note_multiplicity
+from tools.note_fidelity import (PASS, INCOMPLETE, check_notes,
+                                 pdf_note_multiplicity, pdf_text_without_page_numbers,
+                                 page_number_block_indices)
+
+
+class FakeRect:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+
+
+class FakeMatrix:
+    def __init__(self, a, b, c, d, e, f):
+        self.a, self.b, self.c, self.d, self.e, self.f = a, b, c, d, e, f
+
+
+class FakePage:
+    """Minimal PDF page double exposing only what the text extractor uses."""
+
+    def __init__(self, blocks, *, width=612.0, height=792.0,
+                 rotation=0, rotation_matrix=None):
+        self.rect = FakeRect(width, height)
+        self.blocks = list(blocks)
+        self.rotation = rotation
+        self.rotation_matrix = rotation_matrix
+
+    def get_text(self, mode):
+        assert mode == "blocks"
+        return list(self.blocks)
+
+
+def block(x0, y0, x1, y1, text):
+    return (x0, y0, x1, y1, text, 0, 0)
 
 
 class NoteFidelityTests(unittest.TestCase):
@@ -212,6 +244,192 @@ class NoteFidelityTests(unittest.TestCase):
         book,compiled=self.case()
         with self.assertRaisesRegex(ValueError,"UNKNOWN_HEADING_POLICY"):
             check_notes(book,compiled,heading_policy="../unsafe",inspector=app.inspect_epub)
+
+
+class PdfPageNumberExtractionTests(unittest.TestCase):
+    """Regression: a folio is drawn at the page bottom but emitted first.
+
+    The folio therefore lands inside any annotation spanning a page break and
+    used to break a large share of the annotations of one delivered book. Only
+    the standalone, centred, bottom-most numeric block may be removed.
+    """
+
+    def test_folio_between_note_halves_is_removed_and_note_joins_up(self):
+        # The folio block is emitted first in the content stream even though it
+        # is drawn at the very bottom of the page.
+        page = FakePage([
+            block(298.5, 747.9, 313.5, 764.5, "1"),
+            block(77.0, 71.9, 535.0, 400.0, "〔注：注释前半"),
+        ])
+        text, removed = pdf_text_without_page_numbers([page])
+        self.assertEqual(removed, 1)
+        self.assertNotIn("1", text)
+        self.assertIn("〔注：注释前半", text)
+
+    def test_cross_page_annotation_is_reassembled_without_the_folio(self):
+        first = FakePage([
+            block(298.5, 747.9, 313.5, 764.5, "1"),
+            block(77.0, 71.9, 535.0, 400.0, "〔注：跨页注释"),
+        ])
+        second = FakePage([
+            block(298.5, 747.9, 313.5, 764.5, "2"),
+            block(77.0, 71.9, 535.0, 400.0, "的后半部分〕"),
+        ])
+        text, removed = pdf_text_without_page_numbers([first, second])
+        self.assertEqual(removed, 2)
+        self.assertIn("〔注：跨页注释的后半部分〕", text)
+        self.assertNotIn("1", text)
+        self.assertNotIn("2", text)
+
+    def test_folio_value_and_geometry_of_a_letter_size_pdf(self):
+        # A common Letter-size PDF: 443 pages of 612x792 with a centred folio
+        # of the physical page number at y0=747.9.
+        blocks = [
+            block(298.5, 747.9, 313.5, 764.5, "222"),
+            block(77.0, 71.9, 535.0, 700.0, "〔注：跨页注释"),
+        ]
+        self.assertEqual(
+            page_number_block_indices(blocks, width=612.0, height=792.0,
+                                      page_count=443), [0])
+
+    def test_body_years_dates_and_isolated_numbers_are_preserved(self):
+        page = FakePage([
+            block(77.0, 71.9, 535.0, 400.0, "合成正文：一九二六年他毕业，某年某月某日购花八株。"),
+            block(77.0, 420.0, 120.0, 440.0, "24"),
+            block(300.0, 420.0, 340.0, 440.0, "1949"),
+            block(450.0, 420.0, 500.0, 440.0, "1985"),
+        ])
+        text, removed = pdf_text_without_page_numbers([page])
+        self.assertEqual(removed, 0)
+        self.assertIn("一九二六年", text)
+        self.assertIn("某年某月某日", text)
+        self.assertIn("24", text)
+        self.assertIn("1949", text)
+        self.assertIn("1985", text)
+
+    def test_centred_bottom_number_above_body_text_is_not_a_folio(self):
+        # A standalone centred number in the bottom band is only a folio when
+        # it also starts below every other text block of that page.
+        page = FakePage([
+            block(298.5, 747.9, 313.5, 764.5, "12"),
+            block(77.0, 71.9, 535.0, 760.0, "正文最后一行在页码之下"),
+        ])
+        text, removed = pdf_text_without_page_numbers([page])
+        self.assertEqual(removed, 0)
+        self.assertIn("12", text)
+
+    def test_folio_outside_the_bottom_band_is_kept(self):
+        page = FakePage([
+            block(298.5, 500.0, 313.5, 516.0, "7"),
+            block(77.0, 71.9, 535.0, 760.0, "正文"),
+        ])
+        text, removed = pdf_text_without_page_numbers([page])
+        self.assertEqual(removed, 0)
+        self.assertIn("7", text)
+
+    def test_off_centre_bottom_number_is_kept(self):
+        page = FakePage([
+            block(77.0, 747.9, 92.0, 764.5, "2"),
+            block(77.0, 71.9, 535.0, 700.0, "正文"),
+        ])
+        text, removed = pdf_text_without_page_numbers([page])
+        self.assertEqual(removed, 0)
+        self.assertIn("2", text)
+
+    def test_threshold_follows_the_real_page_size(self):
+        # The same absolute coordinate is a folio on a 792pt page and ordinary
+        # mid-page content on a 1200pt page, so no fixed y value is used.
+        folio_page = FakePage([
+            block(298.5, 760.0, 313.5, 776.0, "9"),
+            block(77.0, 71.9, 535.0, 700.0, "正文"),
+        ], width=612.0, height=792.0)
+        folio_text, folio_removed = pdf_text_without_page_numbers([folio_page])
+        self.assertEqual(folio_removed, 1)
+        self.assertNotIn("9", folio_text)
+        tall_page = FakePage([
+            block(298.5, 760.0, 313.5, 776.0, "9"),
+            block(77.0, 71.9, 535.0, 1100.0, "正文"),
+        ], width=612.0, height=1200.0)
+        tall_text, tall_removed = pdf_text_without_page_numbers([tall_page])
+        self.assertEqual(tall_removed, 0)
+        self.assertIn("9", tall_text)
+
+    def test_number_outside_plausible_page_range_is_kept(self):
+        page = FakePage([
+            block(298.5, 747.9, 313.5, 764.5, "9999"),
+            block(77.0, 71.9, 535.0, 700.0, "正文"),
+        ])
+        text, removed = pdf_text_without_page_numbers([page])
+        self.assertEqual(removed, 0)
+        self.assertIn("9999", text)
+
+    def test_invalid_geometry_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "INVALID_PAGE_GEOMETRY"):
+            page_number_block_indices([block(0, 0, 1, 1, "1")],
+                                      width=0, height=792, page_count=1)
+        with self.assertRaisesRegex(ValueError, "INVALID_PAGE_COUNT"):
+            page_number_block_indices([block(0, 0, 1, 1, "1")],
+                                      width=612, height=792, page_count=0)
+
+    def test_removed_folio_restores_a_note_split_across_a_page_break(self):
+        expected = ["〔注：甲〕", "〔注：甲〕", "〔注：乙〕"]
+        # The folio sits inside the second annotation, so its label no longer
+        # occurs as one string.
+        split = "〔注：甲〕接续〔注：乙" + "222" + "〕〔注：甲〕"
+        broken = pdf_note_multiplicity(expected, split)
+        self.assertEqual(broken["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_INCOMPLETE")
+        self.assertEqual(broken["missing"], 1)
+        repaired = pdf_note_multiplicity(expected, split.replace("222", ""))
+        self.assertEqual(repaired["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_PASS")
+        self.assertEqual((repaired["matched"], repaired["missing"], repaired["extra"]),
+                         (3, 0, 0))
+
+    def test_genuinely_missing_or_duplicated_annotations_still_fail(self):
+        missing = pdf_note_multiplicity(["〔注：甲〕", "〔注：甲〕", "〔注：乙〕"],
+                                        "〔注：甲〕〔注：乙〕")
+        self.assertEqual(missing["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_INCOMPLETE")
+        self.assertEqual((missing["matched"], missing["missing"]), (2, 1))
+        extra = pdf_note_multiplicity(["〔注：甲〕", "〔注：乙〕"],
+                                      "〔注：甲〕〔注：乙〕〔注：甲〕")
+        self.assertEqual(extra["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_INCOMPLETE")
+        self.assertEqual((extra["matched"], extra["extra"]), (2, 1))
+
+
+    def test_unicode_digit_symbols_are_preserved_without_conversion_errors(self):
+        # isdigit() accepts superscripts/circled numbers, but int() cannot parse
+        # them. They are body text, not page-number folios, and must survive.
+        for symbol in ("²", "①"):
+            with self.subTest(symbol=symbol):
+                page = FakePage([
+                    block(298.5, 747.9, 313.5, 764.5, symbol),
+                    block(77.0, 71.9, 535.0, 700.0, "正文含有Unicode数字符号"),
+                ])
+                text, removed = pdf_text_without_page_numbers([page])
+                self.assertEqual(removed, 0)
+                self.assertIn(symbol, text)
+
+    def test_rotated_page_transforms_block_boxes_before_folio_detection(self):
+        # A 792x612 page rotated 90 degrees displays as 612x792. The raw
+        # blocks are in unrotated coordinates; the folio maps to a centred
+        # bottom block only after applying the page rotation matrix.
+        page = FakePage([
+            block(748.0, 298.0, 764.0, 314.0, "1"),
+            block(71.9, 77.0, 400.0, 535.0, "〔注：旋转页跨页注释〕"),
+        ], width=612.0, height=792.0, rotation=90,
+           rotation_matrix=FakeMatrix(0, 1, -1, 0, 612, 0))
+        text, removed = pdf_text_without_page_numbers([page])
+        self.assertEqual(removed, 1)
+        self.assertIn("〔注：旋转页跨页注释〕", text)
+        self.assertNotIn("1", text)
+
+    def test_rotated_page_without_matrix_fails_closed(self):
+        page = FakePage([
+            block(748.0, 298.0, 764.0, 314.0, "1"),
+            block(71.9, 77.0, 400.0, 535.0, "正文"),
+        ], width=612.0, height=792.0, rotation=90)
+        with self.assertRaisesRegex(ValueError, "ROTATED_PAGE_MATRIX_REQUIRED"):
+            pdf_text_without_page_numbers([page])
+
 
 
 if __name__ == "__main__":
