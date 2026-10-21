@@ -21,12 +21,20 @@ class FakeRect:
         self.height = height
 
 
+class FakeMatrix:
+    def __init__(self, a, b, c, d, e, f):
+        self.a, self.b, self.c, self.d, self.e, self.f = a, b, c, d, e, f
+
+
 class FakePage:
     """Minimal PDF page double exposing only what the text extractor uses."""
 
-    def __init__(self, blocks, *, width=612.0, height=792.0):
+    def __init__(self, blocks, *, width=612.0, height=792.0,
+                 rotation=0, rotation_matrix=None):
         self.rect = FakeRect(width, height)
         self.blocks = list(blocks)
+        self.rotation = rotation
+        self.rotation_matrix = rotation_matrix
 
     def get_text(self, mode):
         assert mode == "blocks"
@@ -385,6 +393,43 @@ class PdfPageNumberExtractionTests(unittest.TestCase):
                                       "〔注：甲〕〔注：乙〕〔注：甲〕")
         self.assertEqual(extra["status"], "PDF_NOTE_OCCURRENCE_MULTIPLICITY_INCOMPLETE")
         self.assertEqual((extra["matched"], extra["extra"]), (2, 1))
+
+
+    def test_unicode_digit_symbols_are_preserved_without_conversion_errors(self):
+        # isdigit() accepts superscripts/circled numbers, but int() cannot parse
+        # them. They are body text, not page-number folios, and must survive.
+        for symbol in ("²", "①"):
+            with self.subTest(symbol=symbol):
+                page = FakePage([
+                    block(298.5, 747.9, 313.5, 764.5, symbol),
+                    block(77.0, 71.9, 535.0, 700.0, "正文含有Unicode数字符号"),
+                ])
+                text, removed = pdf_text_without_page_numbers([page])
+                self.assertEqual(removed, 0)
+                self.assertIn(symbol, text)
+
+    def test_rotated_page_transforms_block_boxes_before_folio_detection(self):
+        # A 792x612 page rotated 90 degrees displays as 612x792. The raw
+        # blocks are in unrotated coordinates; the folio maps to a centred
+        # bottom block only after applying the page rotation matrix.
+        page = FakePage([
+            block(748.0, 298.0, 764.0, 314.0, "1"),
+            block(71.9, 77.0, 400.0, 535.0, "〔注：旋转页跨页注释〕"),
+        ], width=612.0, height=792.0, rotation=90,
+           rotation_matrix=FakeMatrix(0, 1, -1, 0, 612, 0))
+        text, removed = pdf_text_without_page_numbers([page])
+        self.assertEqual(removed, 1)
+        self.assertIn("〔注：旋转页跨页注释〕", text)
+        self.assertNotIn("1", text)
+
+    def test_rotated_page_without_matrix_fails_closed(self):
+        page = FakePage([
+            block(748.0, 298.0, 764.0, 314.0, "1"),
+            block(71.9, 77.0, 400.0, 535.0, "正文"),
+        ], width=612.0, height=792.0, rotation=90)
+        with self.assertRaisesRegex(ValueError, "ROTATED_PAGE_MATRIX_REQUIRED"):
+            pdf_text_without_page_numbers([page])
+
 
 
 if __name__ == "__main__":
